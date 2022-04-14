@@ -4,8 +4,8 @@
 block_cipher = None
 
 a = Analysis(['main.py'],
-             pathex=['./resource'],
-             binaries=[('./resource/**', 'resource')],
+             pathex=[],
+             binaries=[('./resource', './resource')],
              datas=[],
              hiddenimports=[
                  'aiohttp',

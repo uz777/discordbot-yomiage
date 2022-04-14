@@ -1,6 +1,8 @@
 import os
+import subprocess
 import sys
 import yaml
+import re
 
 import discord
 from discord.ext import commands
@@ -11,7 +13,7 @@ from rich.logging import RichHandler
 VERSION = '0.1.0'
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARN,
     format='%(name)s - %(message)s',
     handlers=[RichHandler(rich_tracebacks=True)],
 )
@@ -53,10 +55,8 @@ def initialize():
 
     :return: None
     """
-    if not hasattr(sys, '_MEIPASS'):
-        # resourceディレクトリをパスに追加する
-        # .exe実行の際は、main.specで予めパスを指定済なので不要
-        sys.path.insert(0, os.path.join(os.path.abspath('.')))
+    # バイナリディレクトリにパスを通す(コマンド実行に必要)
+    os.environ["PATH"] += os.pathsep + os.path.join(root_path(), 'resource')
     if not discord.opus.is_loaded():
         # opus(コーデック)読み込み
         discord.opus.load_opus(resource_path('libopus.dll'))
@@ -85,11 +85,64 @@ def resource_path(relative_path):
     return os.path.join(root_path(), 'resource', relative_path)
 
 
+def remove_multi_line(text):
+    return text.split('\n')[0]
+
+
+def remove_custom_emoji(text):
+    pattern = r'<:[a-zA-Z0-9_]+:[0-9]+>'
+    return re.sub(pattern, '', text)
+
+
+def url_abb(text):
+    pattern = "https?://[\w/:%#\$&\?\(\)~\.=\+\-]+"
+    return re.sub(pattern, 'ゆーあーるえる', text)
+
+
+def make_speakable(text):
+    text = remove_multi_line(text)
+    text = url_abb(text)
+    return remove_custom_emoji(text)
+
+
+def create_wav(input_text):
+    input_file = 'input.txt'
+
+    with open(input_file, 'w', encoding='shift_jis') as file:
+        file.write(input_text)
+
+    command = 'open_jtalk.exe -x {x} -m {m} -r {r} -ow {ow} {input_file}'
+
+    # 辞書のPath
+    x = resource_path('dic')
+
+    # ボイスファイルのPath
+    m = resource_path('htsvoice/nitech_jp_atr503_m001.htsvoice')
+    # m = 'C:/open_jtalk/bin/mei/mei_sad.htsvoice'
+    # m = 'C:/open_jtalk/bin/mei/mei_angry.htsvoice'
+    # m = 'C:/open_jtalk/bin/mei/mei_bashful.htsvoice'
+    # m = 'C:/open_jtalk/bin/mei/mei_happy.htsvoice'
+    # m = 'C:/open_jtalk/bin/mei/mei_normal.htsvoice'
+
+    # 発声のスピード
+    r = '1.0'
+
+    # 出力ファイル名　and　Path
+    ow = 'output.wav'
+
+    args = {'x': x, 'm': m, 'r': r, 'ow': ow, 'input_file': input_file}
+
+    cmd = command.format(**args)
+    logger.debug(f'Execute open_jtalk command ({cmd})')
+
+    subprocess.run(cmd)
+    return True
+
+
 if __name__ == '__main__':
 
     initialize()
     client = commands.Bot(command_prefix=config['app']['cmd_prefix'])
-
 
     @client.event
     async def on_ready():
@@ -152,6 +205,25 @@ if __name__ == '__main__':
                 await ctx.voice_client.disconnect()
         else:
             logger.info(f'Not in voice channel.')
+
+
+    @client.event
+    async def on_message(message):
+        bot_vc_cl = message.guild.voice_client
+        if message.content.startswith(config['app']['cmd_prefix']):
+            pass
+        else:
+            if bot_vc_cl:
+                logger.info(f'Received message from user ({message.author.id}/{message.author.name}).')
+                logger.debug(f'Raw message content ({message.content})')
+                text_for_speak = make_speakable(message.content)
+                logger.debug(f'Converted message content ({text_for_speak})')
+                create_wav(text_for_speak)
+                source = discord.FFmpegPCMAudio("output.wav")
+                bot_vc_cl.play(source)
+            else:
+                pass
+        await client.process_commands(message)
 
 
     client.run(config['app']['token'])
