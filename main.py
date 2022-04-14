@@ -8,6 +8,8 @@ from discord.ext import commands
 import logging
 from rich.logging import RichHandler
 
+VERSION = '0.1.0'
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(name)s - %(message)s',
@@ -28,6 +30,21 @@ if not os.path.isfile(config_path):
 else:
     with open(config_path, 'r') as yml:
         config = yaml.safe_load(yml)
+
+
+def print_logo():
+    """ ロゴ表示
+
+    :return: None
+    """
+    print("""
+██╗   ██╗ ██████╗ ███╗   ███╗██╗ █████╗  ██████╗ ███████╗
+╚██╗ ██╔╝██╔═══██╗████╗ ████║██║██╔══██╗██╔════╝ ██╔════╝
+ ╚████╔╝ ██║   ██║██╔████╔██║██║███████║██║  ███╗█████╗  
+  ╚██╔╝  ██║   ██║██║╚██╔╝██║██║██╔══██║██║   ██║██╔══╝  
+   ██║   ╚██████╔╝██║ ╚═╝ ██║██║██║  ██║╚██████╔╝███████╗
+   ╚═╝    ╚═════╝ ╚═╝     ╚═╝╚═╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝
+    """)
 
 
 def initialize():
@@ -72,6 +89,22 @@ if __name__ == '__main__':
 
     initialize()
     client = commands.Bot(command_prefix=config['app']['cmd_prefix'])
+
+
+    @client.event
+    async def on_ready():
+        """ 待機開始
+        コマンドを受付可能となった際に実行される
+        ロゴや設定状態を表示する
+
+        :return: None
+        """
+        print_logo()
+        print('==========================================================')
+        print(f'version: {VERSION}')
+        print(f'cmd_prefix: {config["app"]["cmd_prefix"]}')
+        print(f'bot user: {client.user.id}/{client.user.name}')
+        print('==========================================================')
 
 
     @client.command()
