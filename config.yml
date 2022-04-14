@@ -1,0 +1,3 @@
+app:
+  token: "#### replace with your token! ####"
+  cmd_prefix: "."
