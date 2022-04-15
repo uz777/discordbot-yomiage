@@ -191,7 +191,7 @@ if __name__ == '__main__':
         if user_vc:
             if bot_vc:
                 if bot_vc.id == user_vc.id:
-                    logger.info(f'Already in users voice channel ({user_vc.id}/{user_vc.name}).')
+                    logger.warning(f'Already in users voice channel ({user_vc.id}/{user_vc.name}).')
                     return
                 else:
                     logger.info(f'Disconnecting from voice channel ({bot_vc.id}/{bot_vc.name}).')
@@ -199,7 +199,7 @@ if __name__ == '__main__':
             logger.info(f'Connecting users voice channel ({user_vc.id}/{user_vc.name})')
             await user_vc.connect()
         else:
-            logger.info('User is not in voice channel.')
+            logger.warning('User is not in voice channel.')
 
 
     @client.command()
@@ -218,7 +218,7 @@ if __name__ == '__main__':
                 logger.info(f'Disconnecting from voice channel ({bot_vc.id}/{bot_vc.name}).')
                 await ctx.voice_client.disconnect()
         else:
-            logger.info(f'Not in voice channel.')
+            logger.warning(f'Not in voice channel.')
 
 
     @client.event
