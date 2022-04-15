@@ -11,6 +11,21 @@ app:
   # 競合する場合に変更してください
   cmd_prefix: "."
 
+  # 声質
+  # ボットのデフォルトの声質を設定します
+  # 以下のいずれかから選択できます
+  # n  : nitech_jp_atr503_m001.htsvoice
+  # ma : mei_angry.htsvoice
+  # mb : mei_bashful.htsvoice
+  # mh : mei_happy.htsvoice
+  # mn : mei_normal.htsvoice
+  # ms : mei_sad.htsvoice
+  # ta : takumi_angry.htsvoice
+  # th : takumi_happy.htsvoice
+  # tn : takumi_normal.htsvoice
+  # ts : takumi_sad.htsvoice
+  voice_type: "n"
+
 # ログ出力設定
 # これ以降は、コンソール画面やログファイルに出力するログ設定です
 # バグ調査の際に変更することがありますが、通常利用では変更の必要はありません

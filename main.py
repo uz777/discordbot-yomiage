@@ -13,6 +13,20 @@ import logging.config
 
 VERSION = '0.1.0'
 
+VOICE_TYPES = {
+    'n': 'nitech_jp_atr503_m001.htsvoice',
+    'ma': 'mei_angry.htsvoice',
+    'mb': 'mei_bashful.htsvoice',
+    'mh': 'mei_happy.htsvoice',
+    'mn': 'mei_normal.htsvoice',
+    'ms': 'mei_sad.htsvoice',
+    'ta': 'takumi_angry.htsvoice',
+    'th': 'takumi_happy.htsvoice',
+    'tn': 'takumi_normal.htsvoice',
+    'ts': 'takumi_sad.htsvoice',
+}
+
+
 logger = logging.getLogger('yomiage')
 
 if 1 < len(sys.argv):
@@ -52,9 +66,16 @@ def initialize():
     """
     # バイナリディレクトリにパスを通す(コマンド実行に必要)
     os.environ["PATH"] += os.pathsep + os.path.join(root_path(), 'resource')
+
+    # opus(コーデック)読み込み
     if not discord.opus.is_loaded():
-        # opus(コーデック)読み込み
         discord.opus.load_opus(resource_path('libopus.dll'))
+
+    # 声質設定が正常値でなければ、デフォルトへ置き換え
+    vt = config['app']['voice_type']
+    if vt not in VOICE_TYPES:
+        logger.warning(f'Voice Type ({vt}) does not exist. Replaced to (n).')
+        config['app']['voice_type'] = 'n'
 
 
 def root_path():
@@ -112,12 +133,8 @@ def create_wav(input_text):
     x = resource_path('dic')
 
     # ボイスファイルのPath
-    m = resource_path('htsvoice/nitech_jp_atr503_m001.htsvoice')
-    # m = 'C:/open_jtalk/bin/mei/mei_sad.htsvoice'
-    # m = 'C:/open_jtalk/bin/mei/mei_angry.htsvoice'
-    # m = 'C:/open_jtalk/bin/mei/mei_bashful.htsvoice'
-    # m = 'C:/open_jtalk/bin/mei/mei_happy.htsvoice'
-    # m = 'C:/open_jtalk/bin/mei/mei_normal.htsvoice'
+    vt = config['app']['voice_type']
+    m = resource_path(f'htsvoice\\{VOICE_TYPES[vt]}')
 
     # 発声のスピード
     r = '1.0'
@@ -149,11 +166,12 @@ if __name__ == '__main__':
         :return: None
         """
         print_logo()
-        print('==========================================================')
-        print(f'version: {VERSION}')
-        print(f'cmd_prefix: {config["app"]["cmd_prefix"]}')
-        print(f'bot user: {client.user.id}/{client.user.name}')
-        print('==========================================================')
+        logger.info('==========================================================')
+        logger.info(f'version: {VERSION}')
+        logger.info(f'cmd_prefix: {config["app"]["cmd_prefix"]}')
+        logger.info(f'voice_type: {config["app"]["voice_type"]} ({VOICE_TYPES[config["app"]["voice_type"]]})')
+        logger.info(f'bot user: {client.user.id}/{client.user.name}')
+        logger.info('==========================================================')
 
 
     @client.command()
@@ -236,4 +254,8 @@ if __name__ == '__main__':
             logger.error(''.join(traceback.TracebackException.from_exception(orig_error).format()))
 
 
-    client.run(config['app']['token'])
+    try:
+        client.run(config['app']['token'])
+    except:
+        logger.exception('Running client interrupted with exception.')
+
