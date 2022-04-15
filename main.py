@@ -1,6 +1,8 @@
 import os
 import subprocess
 import sys
+import traceback
+
 import yaml
 import re
 
@@ -218,6 +220,15 @@ if __name__ == '__main__':
             else:
                 pass
         await client.process_commands(message)
+
+
+    @client.event
+    async def on_command_error(ctx, error):
+        logger.error(error)
+        if isinstance(error, commands.CommandInvokeError):
+            orig_error = getattr(error, "original", error)
+            logger.error(''.join(traceback.TracebackException.from_exception(orig_error).format()))
+
 
 
     client.run(config['app']['token'])
