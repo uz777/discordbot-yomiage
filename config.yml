@@ -17,14 +17,15 @@ app:
 version: 1
 formatters:
   console:
-    format: '%(name)s - %(message)s'
+    format: '%(asctime)s - %(levelname)7s - %(name)10s - %(message)s'
+    datefmt: '%H:%M:%S'
   file:
-    format: '%(asctime)s - %(levelname)7s - %(name)20s - %(message)s'
+    format: '%(asctime)s - %(levelname)7s - %(name)15s - %(message)s'
 handlers:
   console:
-    class: rich.logging.RichHandler
-    rich_tracebacks: True
+    class: logging.StreamHandler
     formatter: console
+    stream: ext://sys.stdout
   file:
     class: logging.handlers.RotatingFileHandler
     maxBytes: 1000000

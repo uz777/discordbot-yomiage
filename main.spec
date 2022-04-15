@@ -25,7 +25,6 @@ a = Analysis(['main.py'],
                  'PyNaCl',
                  'pywin32-ctypes',
                  'PyYAML',
-                 'rich'
                  'six',
                  'typing_extensions',
                  'yarl'],
