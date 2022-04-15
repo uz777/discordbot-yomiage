@@ -101,7 +101,7 @@ def make_speakable(text):
 
 
 def create_wav(input_text):
-    input_file = 'input.txt'
+    input_file = resource_path('input.txt')
 
     with open(input_file, 'w', encoding='shift_jis') as file:
         file.write(input_text)
@@ -123,7 +123,7 @@ def create_wav(input_text):
     r = '1.0'
 
     # 出力ファイル名　and　Path
-    ow = 'output.wav'
+    ow = resource_path('output.wav')
 
     args = {'x': x, 'm': m, 'r': r, 'ow': ow, 'input_file': input_file}
 
@@ -215,7 +215,7 @@ if __name__ == '__main__':
                 text_for_speak = make_speakable(message.content)
                 logger.debug(f'Converted message content ({text_for_speak})')
                 create_wav(text_for_speak)
-                source = discord.FFmpegPCMAudio("output.wav")
+                source = discord.FFmpegPCMAudio(resource_path('output.wav'))
                 bot_vc_cl.play(source)
             else:
                 pass
