@@ -223,12 +223,17 @@ if __name__ == '__main__':
 
 
     @client.event
+    async def on_error(event, *args, **kwargs):
+        logger.error(event)
+        logger.error(traceback.format_exc())
+
+
+    @client.event
     async def on_command_error(ctx, error):
         logger.error(error)
         if isinstance(error, commands.CommandInvokeError):
             orig_error = getattr(error, "original", error)
             logger.error(''.join(traceback.TracebackException.from_exception(orig_error).format()))
-
 
 
     client.run(config['app']['token'])
