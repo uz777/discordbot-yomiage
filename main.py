@@ -2,45 +2,11 @@ import os
 import subprocess
 import sys
 import traceback
-
 import yaml
 import re
-
 import discord
 from discord.ext import commands
-
 import logging.config
-
-VERSION = '0.1.0'
-
-VOICE_TYPES = {
-    'n': 'nitech_jp_atr503_m001.htsvoice',
-    'ma': 'mei_angry.htsvoice',
-    'mb': 'mei_bashful.htsvoice',
-    'mh': 'mei_happy.htsvoice',
-    'mn': 'mei_normal.htsvoice',
-    'ms': 'mei_sad.htsvoice',
-    'ta': 'takumi_angry.htsvoice',
-    'th': 'takumi_happy.htsvoice',
-    'tn': 'takumi_normal.htsvoice',
-    'ts': 'takumi_sad.htsvoice',
-}
-
-
-logger = logging.getLogger('yomiage')
-
-if 1 < len(sys.argv):
-    config_path = sys.argv[1]
-else:
-    config_path = os.path.abspath('config.yml')
-
-if not os.path.isfile(config_path):
-    logger.error(f'Config yaml file ({config_path}) does not exist.')
-    sys.exit(1)
-else:
-    with open(config_path, 'r', encoding="utf-8") as yml:
-        config = yaml.safe_load(yml)
-        logging.config.dictConfig(config)
 
 
 def print_logo():
@@ -56,6 +22,59 @@ def print_logo():
    ██║   ╚██████╔╝██║ ╚═╝ ██║██║██║  ██║╚██████╔╝███████╗
    ╚═╝    ╚═════╝ ╚═╝     ╚═╝╚═╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝
     """)
+
+
+"""
+VERSION
+    アプリケーションバージョン
+"""
+VERSION = '0.1.0'
+
+"""
+VOICE_TYPES
+    声質略記名とファイル名のマップ
+"""
+VOICE_TYPES = {
+    'n': 'nitech_jp_atr503_m001.htsvoice',
+    'ma': 'mei_angry.htsvoice',
+    'mb': 'mei_bashful.htsvoice',
+    'mh': 'mei_happy.htsvoice',
+    'mn': 'mei_normal.htsvoice',
+    'ms': 'mei_sad.htsvoice',
+    'ta': 'takumi_angry.htsvoice',
+    'th': 'takumi_happy.htsvoice',
+    'tn': 'takumi_normal.htsvoice',
+    'ts': 'takumi_sad.htsvoice',
+}
+
+"""
+logger
+    アプリケーションロガー
+"""
+logger = logging.getLogger('yomiage')
+
+"""
+グローバル初期化処理
+    アプリケーションの初期化前に必要となる処理を行う
+    設定ファイルの読み込み
+        引数で指定があればそのパスを設定ファイルとして読み込む
+        指定が無い場合は、config.ymlを設定ファイルとして読み込む
+        設定ファイルが存在しない場合はエラーとする。
+    ロガー初期化
+        読み込んだ設定ファイルでロガーを初期化する
+"""
+if 1 < len(sys.argv):
+    config_path = os.path.abspath(sys.argv[1])
+else:
+    config_path = os.path.abspath('config.yml')
+
+if not os.path.isfile(config_path):
+    logger.error(f'Config yaml file ({config_path}) does not exist.')
+    sys.exit(1)
+else:
+    with open(config_path, 'r', encoding="utf-8") as yml:
+        config = yaml.safe_load(yml)
+        logging.config.dictConfig(config)
 
 
 def initialize():
@@ -102,26 +121,56 @@ def resource_path(relative_path):
 
 
 def remove_multi_line(text):
+    """ 2行目除去
+    2行目以降の文字列を除去して返却する
+
+    :param text: 変換前文字列
+    :return: 変換後文字列
+    """
     return text.split('\n')[0]
 
 
 def remove_custom_emoji(text):
+    """ 絵文字削除
+    絵文字を削除して返却する
+
+    :param text: 変換前文字列
+    :return: 変換後文字列
+    """
     pattern = r'<:[a-zA-Z0-9_]+:[0-9]+>'
     return re.sub(pattern, '', text)
 
 
 def url_abb(text):
+    """ url置換
+    URLにパターンマッチする箇所を「ゆーあーるえる」へ置換して返却する
+
+    :param text: 変換前文字列
+    :return: 変換後文字列
+    """
     pattern = "https?://[\w/:%#\$&\?\(\)~\.=\+\-]+"
     return re.sub(pattern, 'ゆーあーるえる', text)
 
 
 def make_speakable(text):
+    """ 文字列可読化
+    文字列を読み上げ可能な状態へ加工して返却する
+
+    :param text: 変換前文字列
+    :return: 変換後文字列
+    """
     text = remove_multi_line(text)
     text = url_abb(text)
     return remove_custom_emoji(text)
 
 
 def create_wav(input_text):
+    """ 読み上げ音声ファイル生成
+    open_jtalkを使用し、文字列から読み上げ音声ファイルを生成する
+
+    :param input_text: 生成対象文字列
+    :return: None
+    """
     input_file = resource_path('input.txt')
 
     with open(input_file, 'w', encoding='shift_jis') as file:
@@ -223,6 +272,13 @@ if __name__ == '__main__':
 
     @client.event
     async def on_message(message):
+        """ メッセージ受信
+        テキストチャンネルでメッセージが投稿された際に呼び出される
+        コマンド以外の文字列かつ読み上げ対象であれば、音声を再生する
+
+        :param message: メッセージ
+        :return: None
+        """
         bot_vc_cl = message.guild.voice_client
         if message.content.startswith(config['app']['cmd_prefix']):
             pass
@@ -242,12 +298,27 @@ if __name__ == '__main__':
 
     @client.event
     async def on_error(event, *args, **kwargs):
+        """ エラーハンドラ
+        コマンド以外でエラーが発生した場合のハンドラ
+
+        :param event: event
+        :param args: args
+        :param kwargs: kwargs
+        :return: None
+        """
         logger.error(event)
         logger.error(traceback.format_exc())
 
 
     @client.event
     async def on_command_error(ctx, error):
+        """ コマンドエラーハンドラ
+        コマンド内でエラーが発生した場合のハンドラ
+
+        :param ctx: Context
+        :param error: error
+        :return: None
+        """
         logger.error(error)
         if isinstance(error, commands.CommandInvokeError):
             orig_error = getattr(error, "original", error)
@@ -258,4 +329,3 @@ if __name__ == '__main__':
         client.run(config['app']['token'])
     except:
         logger.exception('Running client interrupted with exception.')
-
