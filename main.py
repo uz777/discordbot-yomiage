@@ -141,6 +141,17 @@ def remove_custom_emoji(text):
     return re.sub(pattern, '', text)
 
 
+def remove_mention(text):
+    """ メンション削除
+    メンションを削除して返却する
+    
+    :param text: 変換前文字列
+    :return: 変換後文字列
+    """
+    pattern = r'@[0-9]{18}'
+    return re.sub(pattern, '', text)
+
+
 def url_abb(text):
     """ url置換
     URLにパターンマッチする箇所を「ゆーあーるえる」へ置換して返却する
@@ -152,6 +163,17 @@ def url_abb(text):
     return re.sub(pattern, 'ゆーあーるえる', text)
 
 
+def big_num_abb(text):
+    """ 長い数字の除去
+    5桁以上の数字を「たくさん」に置換して返却する
+
+    :param text: 変換前文字列
+    :return: 変換後文字列
+    """
+    pattern = "[0-9]{5,}"
+    return re.sub(pattern, 'たくさん', text)
+
+
 def make_speakable(text):
     """ 文字列可読化
     文字列を読み上げ可能な状態へ加工して返却する
@@ -160,7 +182,9 @@ def make_speakable(text):
     :return: 変換後文字列
     """
     text = remove_multi_line(text)
+    text = remove_mention(text)
     text = url_abb(text)
+    text = big_num_abb(text)
     return remove_custom_emoji(text)
 
 
