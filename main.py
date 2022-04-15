@@ -7,19 +7,11 @@ import re
 import discord
 from discord.ext import commands
 
-import logging
-from rich.logging import RichHandler
+import logging.config
 
 VERSION = '0.1.0'
 
-logging.basicConfig(
-    level=logging.WARN,
-    format='%(name)s - %(message)s',
-    handlers=[RichHandler(rich_tracebacks=True)],
-)
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger = logging.getLogger('yomiage')
 
 if 1 < len(sys.argv):
     config_path = sys.argv[1]
@@ -30,8 +22,9 @@ if not os.path.isfile(config_path):
     logger.error(f'Config yaml file ({config_path}) does not exist.')
     sys.exit(1)
 else:
-    with open(config_path, 'r') as yml:
+    with open(config_path, 'r', encoding="utf-8") as yml:
         config = yaml.safe_load(yml)
+        logging.config.dictConfig(config)
 
 
 def print_logo():
@@ -143,6 +136,7 @@ if __name__ == '__main__':
 
     initialize()
     client = commands.Bot(command_prefix=config['app']['cmd_prefix'])
+
 
     @client.event
     async def on_ready():

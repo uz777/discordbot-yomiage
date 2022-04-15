@@ -1,3 +1,41 @@
 app:
+  # ボットトークン
+  # discord developer portalで取得したトークンを設定します
+  # トークンが漏洩すると、ボットが第三者に悪用される恐れがあります
+  # 外部には絶対に公開しないでください
   token: "#### replace with your token! ####"
+
+  # コマンドプレフィックス
+  # ボットがコマンドを識別するための記号を設定します
+  # サーバー内でボットを複数使用する場合や、他のボットとコマンドが
+  # 競合する場合に変更してください
   cmd_prefix: "."
+
+# ログ出力設定
+# これ以降は、コンソール画面やログファイルに出力するログ設定です
+# バグ調査の際に変更することがありますが、通常利用では変更の必要はありません
+version: 1
+formatters:
+  console:
+    format: '%(name)s - %(message)s'
+  file:
+    format: '%(asctime)s - %(levelname)7s - %(name)20s - %(message)s'
+handlers:
+  console:
+    class: rich.logging.RichHandler
+    rich_tracebacks: True
+    formatter: console
+  file:
+    class: logging.handlers.RotatingFileHandler
+    maxBytes: 1000000
+    backupCount: 3
+    filename: yomiage.log
+    formatter: file
+loggers:
+  root:
+    level: WARN
+    handlers: [console]
+  yomiage:
+    level: INFO
+    handlers: [console]
+disable_existing_loggers: False
