@@ -37,5 +37,4 @@ loggers:
     handlers: [console]
   yomiage:
     level: INFO
-    handlers: [console]
 disable_existing_loggers: False
