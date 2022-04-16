@@ -1,7 +1,10 @@
+import json
 import os
 import subprocess
 import sys
 import traceback
+from dataclasses import dataclass
+
 import yaml
 import re
 import discord
@@ -75,6 +78,30 @@ else:
     with open(config_path, 'r', encoding="utf-8") as yml:
         config = yaml.safe_load(yml)
         logging.config.dictConfig(config)
+
+
+@dataclass
+class User:
+    name = ''
+    voice_type = ''
+
+
+@dataclass
+class VoiceQue:
+    user_id = 0
+    text = ''
+
+
+@dataclass
+class Guild:
+    id = 0
+    text_channel = None
+    voice_channel = None
+    voice_que = []
+    users = {}
+
+
+guilds = {}
 
 
 def initialize():
@@ -188,11 +215,12 @@ def make_speakable(text):
     return remove_custom_emoji(text)
 
 
-def create_wav(input_text):
+def create_wav(input_text, user):
     """ 読み上げ音声ファイル生成
     open_jtalkを使用し、文字列から読み上げ音声ファイルを生成する
 
     :param input_text: 生成対象文字列
+    :param user: ユーザー
     :return: None
     """
     input_file = resource_path('input.txt')
@@ -207,6 +235,9 @@ def create_wav(input_text):
 
     # ボイスファイルのPath
     vt = config['app']['voice_type']
+    if user:
+        vt = user.voice_type
+
     m = resource_path(f'htsvoice\\{VOICE_TYPES[vt]}')
 
     # 発声のスピード
@@ -271,6 +302,18 @@ if __name__ == '__main__':
                     await bot_vc_cl.disconnect()
             logger.info(f'Connecting users voice channel ({user_vc.id}/{user_vc.name})')
             await user_vc.connect()
+
+            if ctx.guild.id in guilds:
+                guild = guilds[ctx.guild.id]
+                guild.voice_channel = user_vc
+                guild.text_channel = ctx.channel
+                guild.voice_que = []
+            else:
+                guild = Guild()
+                guild.id = ctx.guild.id
+                guild.voice_channel = user_vc
+                guild.text_channel = ctx.channel
+                guilds[ctx.guild.id] = guild
         else:
             logger.warning('User is not in voice channel.')
 
@@ -290,8 +333,75 @@ if __name__ == '__main__':
             if bot_vc:
                 logger.info(f'Disconnecting from voice channel ({bot_vc.id}/{bot_vc.name}).')
                 await ctx.voice_client.disconnect()
+
+                if ctx.guild.id in guilds:
+                    del guilds[ctx.guild.id]
+
         else:
             logger.warning(f'Not in voice channel.')
+
+
+    @client.command()
+    async def voice(ctx, arg):
+        logger.info(f'Received [voice] cmd from user ({ctx.author.id}/{ctx.author.name}).')
+
+        if ctx.guild.id not in guilds:
+            guild = Guild()
+            guild.id = ctx.guild.id
+            guild[ctx.guild.id] = guild
+
+        if arg not in VOICE_TYPES:
+            logger.warning(
+                f'Argument ({arg}) does not exist in voice types. setting app default ({config["app"]["voice_type"]})')
+            arg = config['app']['voice_type']
+
+        guild = guilds[ctx.guild.id]
+        if ctx.author.id in guild.users:
+            user = guild.users[ctx.author.id]
+            user.name = ctx.author.name
+            user.voice_type = arg
+        else:
+            user = User()
+            user.name = ctx.author.name
+            user.voice_type = arg
+            guild.users[ctx.author.id] = user
+
+
+    @client.command()
+    async def status(ctx):
+        logger.info(f'Received [status] cmd from user ({ctx.author.id}/{ctx.author.name}).')
+
+        if ctx.guild.id in guilds:
+            guild = guilds[ctx.guild.id]
+            embed = discord.Embed(
+                title='ステータス',
+                description='ボット内部状態')
+
+            embed.add_field(
+                name='TEXT',
+                value=guild.text_channel.name)
+            embed.add_field(
+                name='->',
+                value='to')
+            embed.add_field(
+                name='VC',
+                value=guild.voice_channel.name)
+
+            table = None
+            if len(guild.users) > 0:
+                raw = {}
+                for user in guild.users.values():
+                    raw[user.name] = user.voice_type
+
+                table = json.dumps(raw, indent=2, ensure_ascii=False)
+
+            embed.add_field(
+                name='SPECIFIC VOICETYPE',
+                value=f"```\n{table if table else 'None'}\n```",
+                inline=False
+            )
+
+            await ctx.send(embed=embed)
 
 
     @client.event
@@ -303,20 +413,36 @@ if __name__ == '__main__':
         :param message: メッセージ
         :return: None
         """
-        bot_vc_cl = message.guild.voice_client
-        if message.content.startswith(config['app']['cmd_prefix']):
-            pass
-        else:
-            if bot_vc_cl:
-                logger.info(f'Received message from user ({message.author.id}/{message.author.name}).')
-                logger.debug(f'Raw message content ({message.content})')
-                text_for_speak = make_speakable(message.content)
-                logger.debug(f'Converted message content ({text_for_speak})')
-                create_wav(text_for_speak)
-                source = discord.FFmpegPCMAudio(resource_path('output.wav'))
-                bot_vc_cl.play(source)
+
+        if not message.author.bot:
+            if message.guild.id in guilds:
+                guild = guilds[message.guild.id]
+                if guild.text_channel.id == message.channel.id:
+                    if not message.content.startswith(config['app']['cmd_prefix']):
+                        bot_vc_cl = message.guild.voice_client
+                        if bot_vc_cl:
+                            logger.info(f'Received message from user ({message.author.id}/{message.author.name}).')
+                            logger.debug(f'Raw message content ({message.content})')
+                            text_for_speak = make_speakable(message.content)
+                            logger.debug(f'Converted message content ({text_for_speak})')
+
+                            create_wav(
+                                text_for_speak,
+                                guild.users[message.author.id] if message.author.id in guild.users else None)
+
+                            source = discord.FFmpegPCMAudio(resource_path('output.wav'))
+                            bot_vc_cl.play(source)
+                        else:
+                            logger.debug(f'Has no Voice Client.')
+                    else:
+                        logger.debug(f'Ignored starting with command prefix.')
+                else:
+                    logger.debug(f'Received message from other channel.')
             else:
-                pass
+                logger.debug(f'Unknown guild id.')
+        else:
+            logger.debug('Ignored message from bot.')
+
         await client.process_commands(message)
 
 
