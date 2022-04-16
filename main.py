@@ -4,13 +4,17 @@ import os
 import subprocess
 import sys
 import traceback
-from dataclasses import dataclass
+from asyncio import Task
+from dataclasses import dataclass, field
 
 import yaml
 import re
 import discord
+from discord import VoiceChannel, VoiceClient, Message
 from discord.ext import commands
 import logging.config
+
+from discord.ext.commands import Context
 
 
 def print_logo():
@@ -83,26 +87,26 @@ else:
 
 @dataclass
 class User:
-    id = 0
-    name = ''
-    voice_type = ''
+    id: int = 0
+    name: str = ''
+    voice_type: str = ''
 
 
 @dataclass
 class VoiceSource:
-    user = None
-    text = ''
+    user: User = None
+    text: str = ''
 
 
 @dataclass
-class Guild:
-    id = 0
-    text_channel = None
-    voice_channel = None
-    users = {}
+class Server:
+    id: int = 0
+    text_channel: discord.TextChannel = None
+    voice_channel: discord.VoiceChannel = None
+    users: dict[int, User] = field(default_factory=dict)
     voice_que = asyncio.Queue()
     play_next_voice = asyncio.Event()
-    task = None
+    task: Task = None
 
     def toggle_next_voice(self, error):
         client.loop.call_soon_threadsafe(self.play_next_voice.set)
@@ -122,10 +126,10 @@ class Guild:
             await self.play_next_voice.wait()
 
 
-guilds = {}
+servers: dict[int, Server] = {}
 
 
-def initialize():
+def initialize() -> None:
     """ 初期化処理
     ボットの実行前に必要な初期化処理を行う
 
@@ -145,7 +149,7 @@ def initialize():
         config['app']['voice_type'] = 'n'
 
 
-def root_path():
+def root_path() -> str:
     """ ルートパス取得
     スクリプト実行パス(.exe実行の場合は展開されたディレクトリのパス)を取得する
 
@@ -157,7 +161,7 @@ def root_path():
         return os.path.abspath('.')
 
 
-def resource_path(relative_path):
+def resource_path(relative_path: str) -> str:
     """ パス変換
     resouceディレクトリからの相対パスを、
     絶対パスへ変換して返却する
@@ -168,7 +172,7 @@ def resource_path(relative_path):
     return os.path.join(root_path(), 'resource', relative_path)
 
 
-def make_speakable(text):
+def make_speakable(text: str) -> str:
     """ 文字列可読化
     文字列を読み上げ可能な状態へ加工して返却する
 
@@ -188,7 +192,7 @@ def make_speakable(text):
     return text
 
 
-def create_wav(source, input_file, output_file):
+def create_wav(source: VoiceSource, input_file: str, output_file: str) -> None:
     """ 読み上げ音声ファイル生成
     open_jtalkを使用し、文字列から読み上げ音声ファイルを生成する
 
@@ -234,7 +238,7 @@ if __name__ == '__main__':
 
 
     @client.event
-    async def on_ready():
+    async def on_ready() -> None:
         """ 待機開始
         コマンドを受付可能となった際に実行される
         ロゴや設定状態を表示する
@@ -251,7 +255,7 @@ if __name__ == '__main__':
 
 
     @client.command()
-    async def join(ctx):
+    async def join(ctx) -> None:
         """ 接続
         ユーザーが参加しているVCへbotを参加させる
 
@@ -260,24 +264,24 @@ if __name__ == '__main__':
         """
         logger.info(f'Received [join] cmd from user ({ctx.author.id}/{ctx.author.name}).')
 
-        bot_vc = None
-        bot_vc_cl = ctx.voice_client
+        bot_vc: VoiceChannel = None
+        bot_vc_cl: VoiceClient = ctx.voice_client
         if bot_vc_cl:
             bot_vc = bot_vc_cl.channel
 
-        user_vc = ctx.author.voice.channel
+        user_vc: VoiceChannel = ctx.author.voice.channel
         if not user_vc:
             logger.warning('User is not in voice channel.')
             return
 
         if bot_vc:
             if bot_vc.id == user_vc.id:
-                guild = guilds[ctx.guild.id]
-                if guild.text_channel.id == ctx.channel.id:
+                server = servers[ctx.guild.id]
+                if server.text_channel.id == ctx.channel.id:
                     logger.warning(f'Nothing to do.')
                 else:
-                    logger.info(f'Change text channel ({guild.text_channel.name}) to ({ctx.channel.name})')
-                    guild.text_channel = ctx.channel
+                    logger.info(f'Change text channel ({server.text_channel.name}) to ({ctx.channel.name})')
+                    server.text_channel = ctx.channel
                 return
             else:
                 logger.info(f'Disconnecting from voice channel ({bot_vc.id}/{bot_vc.name}).')
@@ -286,96 +290,91 @@ if __name__ == '__main__':
         logger.info(f'Connecting users voice channel ({user_vc.id}/{user_vc.name})')
         await user_vc.connect()
 
-        if ctx.guild.id in guilds:
-            guild = guilds[ctx.guild.id]
-            guild.voice_channel = user_vc
-            guild.text_channel = ctx.channel
-            guild.voice_que = []
+        if ctx.guild.id in servers:
+            server = servers[ctx.guild.id]
+            server.voice_channel = user_vc
+            server.text_channel = ctx.channel
+            server.voice_que = []
         else:
-            guild = Guild()
-            guild.id = ctx.guild.id
-            guild.voice_channel = user_vc
-            guild.text_channel = ctx.channel
-            guild.task = client.loop.create_task(guild.voice_play_task())
-            guilds[ctx.guild.id] = guild
+            server = Server()
+            server.id = ctx.guild.id
+            server.voice_channel = user_vc
+            server.text_channel = ctx.channel
+            server.task = client.loop.create_task(server.voice_play_task())
+            servers[ctx.guild.id] = server
 
 
     @client.command()
-    async def bye(ctx):
+    async def bye(ctx: Context) -> None:
         """ 切断
         botが接続中のVCから切断する
 
         :param ctx: Context
         :return: None
         """
+
         logger.info(f'Received [bye] cmd from user ({ctx.author.id}/{ctx.author.name}).')
-        bot_vc_cl = ctx.voice_client
+        bot_vc_cl: VoiceClient = ctx.voice_client
         if bot_vc_cl:
-            bot_vc = bot_vc_cl.channel
+            bot_vc: VoiceChannel = bot_vc_cl.channel
             if bot_vc:
                 logger.info(f'Disconnecting from voice channel ({bot_vc.id}/{bot_vc.name}).')
                 await ctx.voice_client.disconnect()
 
-                if ctx.guild.id in guilds:
-                    guilds[ctx.guild.id].task.cancel()
-                    del guilds[ctx.guild.id]
+                if ctx.guild.id in servers:
+                    servers[ctx.guild.id].task.cancel()
+                    del servers[ctx.guild.id]
 
         else:
             logger.warning(f'Not in voice channel.')
 
 
     @client.command()
-    async def voice(ctx, arg):
+    async def voice(ctx, arg) -> None:
         logger.info(f'Received [voice] cmd from user ({ctx.author.id}/{ctx.author.name}).')
 
-        if ctx.guild.id not in guilds:
-            guild = Guild()
-            guild.id = ctx.guild.id
-            guild[ctx.guild.id] = guild
+        if ctx.guild.id not in servers:
+            servers[ctx.guild.id] = Server(id=ctx.guild.id)
 
         if arg not in VOICE_TYPES:
             logger.warning(
                 f'Argument ({arg}) does not exist in voice types. setting app default ({config["app"]["voice_type"]})')
             arg = config['app']['voice_type']
 
-        guild = guilds[ctx.guild.id]
-        if ctx.author.id in guild.users:
-            user = guild.users[ctx.author.id]
+        server = servers[ctx.guild.id]
+        if ctx.author.id in server.users:
+            user = server.users[ctx.author.id]
             user.id = ctx.author.id
             user.name = ctx.author.name
             user.voice_type = arg
         else:
-            user = User()
-            user.id = ctx.author.id
-            user.name = ctx.author.name
-            user.voice_type = arg
-            guild.users[ctx.author.id] = user
+            server.users[ctx.author.id] = User(ctx.author.id, ctx.author.name, arg)
 
 
     @client.command()
-    async def status(ctx):
+    async def status(ctx: Context) -> None:
         logger.info(f'Received [status] cmd from user ({ctx.author.id}/{ctx.author.name}).')
 
-        if ctx.guild.id in guilds:
-            guild = guilds[ctx.guild.id]
+        if ctx.guild.id in servers:
+            server = servers[ctx.guild.id]
             embed = discord.Embed(
                 title='ステータス',
                 description='ボット内部状態')
 
             embed.add_field(
                 name='TEXT',
-                value=guild.text_channel.name)
+                value=server.text_channel.name)
             embed.add_field(
                 name='->',
                 value='to')
             embed.add_field(
                 name='VC',
-                value=guild.voice_channel.name)
+                value=server.voice_channel.name)
 
             table = None
-            if len(guild.users) > 0:
+            if len(server.users) > 0:
                 raw = {}
-                for user in guild.users.values():
+                for user in server.users.values():
                     raw[user.name] = user.voice_type
 
                 table = json.dumps(raw, indent=2, ensure_ascii=False)
@@ -390,7 +389,7 @@ if __name__ == '__main__':
 
 
     @client.event
-    async def on_message(message):
+    async def on_message(message: Message) -> None:
         """ メッセージ受信
         テキストチャンネルでメッセージが投稿された際に呼び出される
         コマンド以外の文字列かつ読み上げ対象であれば、音声を再生する
@@ -403,12 +402,12 @@ if __name__ == '__main__':
             if message.author.bot:
                 logger.debug('Ignored message from bot.')
                 break
-            if message.guild.id not in guilds:
+            if message.guild.id not in servers:
                 logger.debug(f'Unknown guild id.')
                 break
 
-            guild = guilds[message.guild.id]
-            if guild.text_channel.id != message.channel.id:
+            server = servers[message.guild.id]
+            if server.text_channel.id != message.channel.id:
                 logger.debug(f'Received message from other channel.')
                 break
             if message.content.startswith(config['app']['cmd_prefix']):
@@ -427,16 +426,16 @@ if __name__ == '__main__':
 
             source = VoiceSource()
             source.text = text_for_speak
-            if message.author.id in guild.users:
-                source.user = guild.users[message.author.id]
-            await guild.voice_que.put(source)
+            if message.author.id in server.users:
+                source.user = server.users[message.author.id]
+            await server.voice_que.put(source)
             break
 
         await client.process_commands(message)
 
 
     @client.event
-    async def on_error(event, *args, **kwargs):
+    async def on_error(event, *args, **kwargs) -> None:
         """ エラーハンドラ
         コマンド以外でエラーが発生した場合のハンドラ
 
@@ -450,7 +449,7 @@ if __name__ == '__main__':
 
 
     @client.event
-    async def on_command_error(ctx, error):
+    async def on_command_error(ctx: Context, error: Exception) -> None:
         """ コマンドエラーハンドラ
         コマンド内でエラーが発生した場合のハンドラ
 
