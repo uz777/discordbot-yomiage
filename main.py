@@ -6,6 +6,7 @@ import sys
 import traceback
 from asyncio import Task
 from dataclasses import dataclass, field
+from logging import Logger
 
 import yaml
 import re
@@ -17,31 +18,30 @@ import logging.config
 from discord.ext.commands import Context
 
 
-def print_logo():
+VERSION = '0.1.0'
+"""
+VERSION
+    アプリケーションバージョン
+"""
+
+
+def get_logo() -> str:
     """ ロゴ表示
 
     :return: None
     """
-    print("""
+    return f"""
 ██╗   ██╗ ██████╗ ███╗   ███╗██╗ █████╗  ██████╗ ███████╗
 ╚██╗ ██╔╝██╔═══██╗████╗ ████║██║██╔══██╗██╔════╝ ██╔════╝
  ╚████╔╝ ██║   ██║██╔████╔██║██║███████║██║  ███╗█████╗  
   ╚██╔╝  ██║   ██║██║╚██╔╝██║██║██╔══██║██║   ██║██╔══╝  
    ██║   ╚██████╔╝██║ ╚═╝ ██║██║██║  ██║╚██████╔╝███████╗
    ╚═╝    ╚═════╝ ╚═╝     ╚═╝╚═╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝
-    """)
+                  VERSION : {VERSION}
+     https://github.com/zosan777/discordbot-yomiage
+    """
 
 
-"""
-VERSION
-    アプリケーションバージョン
-"""
-VERSION = '0.1.0'
-
-"""
-VOICE_TYPES
-    声質略記名とファイル名のマップ
-"""
 VOICE_TYPES = {
     'n': 'nitech_jp_atr503_m001.htsvoice',
     'ma': 'mei_angry.htsvoice',
@@ -54,39 +54,22 @@ VOICE_TYPES = {
     'tn': 'takumi_normal.htsvoice',
     'ts': 'takumi_sad.htsvoice',
 }
+"""
+声質略記名とファイル名のマップ
+"""
 
+BACK_SLASH = '\n'
 """
-logger
-    アプリケーションロガー
+BACK_SLASH
+    改行文字
 """
-logger = logging.getLogger('yomiage')
-
-"""
-グローバル初期化処理
-    アプリケーションの初期化前に必要となる処理を行う
-    設定ファイルの読み込み
-        引数で指定があればそのパスを設定ファイルとして読み込む
-        指定が無い場合は、config.ymlを設定ファイルとして読み込む
-        設定ファイルが存在しない場合はエラーとする。
-    ロガー初期化
-        読み込んだ設定ファイルでロガーを初期化する
-"""
-if 1 < len(sys.argv):
-    config_path = os.path.abspath(sys.argv[1])
-else:
-    config_path = os.path.abspath('config.yml')
-
-if not os.path.isfile(config_path):
-    logger.error(f'Config yaml file ({config_path}) does not exist.')
-    sys.exit(1)
-else:
-    with open(config_path, 'r', encoding="utf-8") as yml:
-        config = yaml.safe_load(yml)
-        logging.config.dictConfig(config)
 
 
 @dataclass
 class User:
+    """ ユーザー
+    ユーザーの個別設定を保持するクラス
+    """
     id: int = 0
     name: str = ''
     voice_type: str = ''
@@ -94,12 +77,18 @@ class User:
 
 @dataclass
 class VoiceSource:
+    """ 音声化元
+    音声化を行う元情報
+    """
     user: User = None
     text: str = ''
 
 
 @dataclass
 class Server:
+    """ サーバー
+    VC接続後、1サーバーに対して1つ割り当てられるインスタンス
+    """
     id: int = 0
     text_channel: discord.TextChannel = None
     voice_channel: discord.VoiceChannel = None
@@ -108,10 +97,23 @@ class Server:
     play_next_voice = asyncio.Event()
     task: Task = None
 
-    def toggle_next_voice(self, error):
+    def toggle_next_voice(self, error: Exception) -> None:
+        """ 再生終了コールバック
+        音声再生終了後に呼び出される
+
+        :param error: 例外
+        :return: None
+        """
         client.loop.call_soon_threadsafe(self.play_next_voice.set)
 
     async def voice_play_task(self):
+        """ 再生タスク
+        サーバーごとに常駐するタスク
+        voice_queに新しいキューが入ると処理を実行し、
+        再生の終了を待ち合わせる
+
+        :return: None
+        """
         input_file = resource_path(f'{self.id}.txt')
         output_file = resource_path(f'{self.id}.wav')
         while True:
@@ -126,27 +128,72 @@ class Server:
             await self.play_next_voice.wait()
 
 
-servers: dict[int, Server] = {}
-
-
-def initialize() -> None:
-    """ 初期化処理
-    ボットの実行前に必要な初期化処理を行う
-
-    :return: None
+class Config:
+    """ 設定
+    yaml設定内容を保持する
     """
-    # バイナリディレクトリにパスを通す(コマンド実行に必要)
-    os.environ["PATH"] += os.pathsep + os.path.join(root_path(), 'resource')
+    token: str = ''
+    cmd_prefix: str = '.'
+    voice_type: str = 'n'
 
-    # opus(コーデック)読み込み
-    if not discord.opus.is_loaded():
-        discord.opus.load_opus(resource_path('libopus.dll'))
 
-    # 声質設定が正常値でなければ、デフォルトへ置き換え
-    vt = config['app']['voice_type']
-    if vt not in VOICE_TYPES:
-        logger.warning(f'Voice Type ({vt}) does not exist. Replaced to (n).')
-        config['app']['voice_type'] = 'n'
+class Yomiage:
+    """ アプリケーション
+    内部状態のルートクラス
+    """
+
+    config: Config = None
+    servers: dict[int, Server] = {}
+
+    def __init__(self):
+        """ 初期化処理
+        アプリケーションの実行前に必要とな処理を行う
+        ・標準出力へのロゴ表示
+        ・設定ファイルの読み込み
+            引数で指定があればそのパスを設定ファイルとして読み込む
+            指定が無い場合は、config.ymlを設定ファイルとして読み込む
+            設定ファイルが存在しない場合はエラーとする
+        ・ロガー初期化
+            読み込んだ設定ファイルでロガーを初期化する
+        ・環境変数の設定
+            外部.exeの実行に必要となる
+        ・コーデック読み込み
+        """
+        print(get_logo())
+        print('Initializing application...')
+        if 1 < len(sys.argv):
+            config_path = os.path.abspath(sys.argv[1])
+        else:
+            config_path = os.path.abspath('config.yml')
+
+        if not os.path.isfile(config_path):
+            logger.error(f'Config yaml file ({config_path}) does not exist.')
+            sys.exit(1)
+        else:
+            with open(config_path, 'r', encoding="utf-8") as yml:
+                config_dict = yaml.safe_load(yml)
+                logging.config.dictConfig(config_dict)
+
+                config = Config()
+                config.token = config_dict['app']['token']
+                config.cmd_prefix = config_dict['app']['cmd_prefix']
+                vt = config_dict['app']['voice_type']
+                if vt in VOICE_TYPES:
+                    config.voice_type = vt
+                else:
+                    logger.warning(f'Voice Type ({vt}) does not exist. Replaced to (n).')
+                self.config = config
+
+        # バイナリディレクトリにパスを通す(コマンド実行に必要)
+        os.environ["PATH"] += os.pathsep + os.path.join(root_path(), 'resource')
+
+        # opus(コーデック)読み込み
+        if not discord.opus.is_loaded():
+            discord.opus.load_opus(resource_path('libopus.dll'))
+
+
+app: Yomiage
+logger: Logger
 
 
 def root_path() -> str:
@@ -180,11 +227,11 @@ def make_speakable(text: str) -> str:
     :return: 変換後文字列
     """
     # 2行目以降の削除
-    text = text.split('\n')[0]
+    text = text.split(BACK_SLASH)[0]
     # メンションの削除
     text = re.sub(r'@\d{18}', '', text)
     # URLの置換
-    text = re.sub(r"https?://[\w/:%#\$&\?\(\)~\.=\+\-]+", 'ゆーあーるえる', text)
+    text = re.sub(r"https?://[\w/:%#$&?()~.=+\-]+", 'ゆーあーるえる', text)
     # 5桁以上の数字の置換
     text = re.sub(r'\d{5,}', 'たくさん', text)
     # 絵文字の削除
@@ -211,7 +258,7 @@ def create_wav(source: VoiceSource, input_file: str, output_file: str) -> None:
     x = resource_path('dic')
 
     # ボイスファイルのPath
-    vt = config['app']['voice_type']
+    vt = app.config.voice_type
     if source.user:
         vt = source.user.voice_type
 
@@ -228,41 +275,38 @@ def create_wav(source: VoiceSource, input_file: str, output_file: str) -> None:
     logger.debug(f'Execute open_jtalk command ({cmd})')
 
     subprocess.run(cmd)
-    return True
 
 
 if __name__ == '__main__':
-
-    initialize()
-    client = commands.Bot(command_prefix=config['app']['cmd_prefix'])
+    app = Yomiage()
+    logger = logging.getLogger('yomiage')
+    client = commands.Bot(command_prefix=app.config.cmd_prefix)
 
 
     @client.event
     async def on_ready() -> None:
         """ 待機開始
         コマンドを受付可能となった際に実行される
-        ロゴや設定状態を表示する
-
-        :return: None
+        設定状態などをログに出力する
         """
-        print_logo()
+
         logger.info('==========================================================')
-        logger.info(f'version: {VERSION}')
-        logger.info(f'cmd_prefix: {config["app"]["cmd_prefix"]}')
-        logger.info(f'voice_type: {config["app"]["voice_type"]} ({VOICE_TYPES[config["app"]["voice_type"]]})')
-        logger.info(f'bot user: {client.user.id}/{client.user.name}')
+        logger.info(f'cmd_prefix: {app.config.cmd_prefix}')
+        logger.info(f'voice_type: {app.config.voice_type} ({VOICE_TYPES[app.config.voice_type]})')
+        logger.info(f'bot_user: {client.user.id}/{client.user.name}')
         logger.info('==========================================================')
+        logger.info('Application successfully　launched. Now waiting users operation.')
 
 
     @client.command()
     async def join(ctx) -> None:
         """ 接続
-        ユーザーが参加しているVCへbotを参加させる
-
-        :param ctx: Context
-        :return: None
+        ユーザーが参加しているボイスチャンネルに、botを参加させる
+        以降、コマンドを実行したテキストチャンネルの投稿が読み上げられる
+        ボイスチャンネル・テキストチャンネルを変更したい場合は、
+        目的のボイスチャンネルに参加したうえで、目的のテキストチャンネルからコマンドを再実行する
         """
-        logger.info(f'Received [join] cmd from user ({ctx.author.id}/{ctx.author.name}).')
+        logger.info(f'Received [join] cmd from user ({ctx.author.name}).')
 
         bot_vc: VoiceChannel = None
         bot_vc_cl: VoiceClient = ctx.voice_client
@@ -276,7 +320,7 @@ if __name__ == '__main__':
 
         if bot_vc:
             if bot_vc.id == user_vc.id:
-                server = servers[ctx.guild.id]
+                server = app.servers[ctx.guild.id]
                 if server.text_channel.id == ctx.channel.id:
                     logger.warning(f'Nothing to do.')
                 else:
@@ -284,36 +328,33 @@ if __name__ == '__main__':
                     server.text_channel = ctx.channel
                 return
             else:
-                logger.info(f'Disconnecting from voice channel ({bot_vc.id}/{bot_vc.name}).')
+                logger.info(f'Disconnecting from voice channel ({bot_vc.name}).')
                 await bot_vc_cl.disconnect()
 
-        logger.info(f'Connecting users voice channel ({user_vc.id}/{user_vc.name})')
+        logger.info(f'Connecting users voice channel ({user_vc.name})')
         await user_vc.connect()
 
-        if ctx.guild.id in servers:
-            server = servers[ctx.guild.id]
+        if ctx.guild.id in app.servers:
+            server = app.servers[ctx.guild.id]
             server.voice_channel = user_vc
             server.text_channel = ctx.channel
-            server.voice_que = []
         else:
             server = Server()
             server.id = ctx.guild.id
             server.voice_channel = user_vc
             server.text_channel = ctx.channel
             server.task = client.loop.create_task(server.voice_play_task())
-            servers[ctx.guild.id] = server
+            app.servers[ctx.guild.id] = server
 
 
     @client.command()
     async def bye(ctx: Context) -> None:
         """ 切断
-        botが接続中のVCから切断する
-
-        :param ctx: Context
-        :return: None
+        botが接続中のボイスチャンネルから切断する
+        テキストチャンネルからの読み上げを停止する
         """
 
-        logger.info(f'Received [bye] cmd from user ({ctx.author.id}/{ctx.author.name}).')
+        logger.info(f'Received [bye] cmd from user ({ctx.author.name}).')
         bot_vc_cl: VoiceClient = ctx.voice_client
         if bot_vc_cl:
             bot_vc: VoiceChannel = bot_vc_cl.channel
@@ -321,9 +362,9 @@ if __name__ == '__main__':
                 logger.info(f'Disconnecting from voice channel ({bot_vc.id}/{bot_vc.name}).')
                 await ctx.voice_client.disconnect()
 
-                if ctx.guild.id in servers:
-                    servers[ctx.guild.id].task.cancel()
-                    del servers[ctx.guild.id]
+                if ctx.guild.id in app.servers:
+                    app.servers[ctx.guild.id].task.cancel()
+                    del app.servers[ctx.guild.id]
 
         else:
             logger.warning(f'Not in voice channel.')
@@ -331,17 +372,34 @@ if __name__ == '__main__':
 
     @client.command()
     async def voice(ctx: Context, arg: str) -> None:
-        logger.info(f'Received [voice] cmd from user ({ctx.author.id}/{ctx.author.name}).')
+        """ 声質変更
+        ユーザーの声質を、引数で指定したものへ変更する
+        本設定はユーザーごとに、接続～切断の間保持される
+        未接続状態では設定できない
+        <arg>に設定可能な値は以下の通り
+        n : 男性１通常
+        ma: 女性１怒り
+        mb: 女性１照れ
+        mh: 女性１喜び
+        mn: 女性１通常
+        ms: 女性１悲しみ
+        ta: 男性１怒り
+        th: 男性１喜び
+        tn: 男性１通常
+        ts: 男性１悲しみ
+        """
+        logger.info(f'Received [voice] cmd from user ({ctx.author.name}).')
 
-        if ctx.guild.id not in servers:
-            servers[ctx.guild.id] = Server(id=ctx.guild.id)
+        if ctx.guild.id not in app.servers:
+            logger.warning(f'Not joined yet.')
+            return
 
         if arg not in VOICE_TYPES:
             logger.warning(
-                f'Argument ({arg}) does not exist in voice types. setting app default ({config["app"]["voice_type"]})')
-            arg = config['app']['voice_type']
+                f'Argument ({arg}) does not exist in voice types. setting app default ({app.config.voice_type})')
+            arg = app.config.voice_type
 
-        server = servers[ctx.guild.id]
+        server = app.servers[ctx.guild.id]
         if ctx.author.id in server.users:
             user = server.users[ctx.author.id]
             user.id = ctx.author.id
@@ -352,11 +410,28 @@ if __name__ == '__main__':
 
 
     @client.command()
-    async def status(ctx: Context) -> None:
-        logger.info(f'Received [status] cmd from user ({ctx.author.id}/{ctx.author.name}).')
+    async def default(ctx: Context) -> None:
+        """ ユーザー個別設定削除
+        ユーザー個別設定を削除し、デフォルト状態へ戻す
+        """
+        logger.info(f'Received [default] cmd from user ({ctx.author.name}).')
+        if ctx.guild.id in app.servers:
+            server = app.servers[ctx.guild.id]
+            if ctx.author.id in server.users:
+                del server.users[ctx.author.id]
+                return
+        logger.warning(f'Already default.')
 
-        if ctx.guild.id in servers:
-            server = servers[ctx.guild.id]
+
+    @client.command()
+    async def status(ctx: Context) -> None:
+        """ ボット状態確認
+        ボットの内部状態を確認する
+        """
+        logger.info(f'Received [status] cmd from user ({ctx.author.name}).')
+
+        if ctx.guild.id in app.servers:
+            server = app.servers[ctx.guild.id]
             embed = discord.Embed(
                 title='ステータス',
                 description='ボット内部状態')
@@ -381,7 +456,7 @@ if __name__ == '__main__':
 
             embed.add_field(
                 name='SPECIFIC VOICETYPE',
-                value=f"```\n{table if table else 'None'}\n```",
+                value=f"```{BACK_SLASH}{table if table else 'None'}{BACK_SLASH}```",
                 inline=False
             )
 
@@ -393,24 +468,24 @@ if __name__ == '__main__':
         """ メッセージ受信
         テキストチャンネルでメッセージが投稿された際に呼び出される
         コマンド以外の文字列かつ読み上げ対象であれば、音声を再生する
-
-        :param message: メッセージ
-        :return: None
         """
 
         while True:
             if message.author.bot:
                 logger.debug('Ignored message from bot.')
                 break
-            if message.guild.id not in servers:
-                logger.debug(f'Unknown guild id.')
+            if message.guild.id not in app.servers:
+                logger.debug(f'Unknown server id.')
                 break
 
-            server = servers[message.guild.id]
+            server = app.servers[message.guild.id]
+            if not server.text_channel or not server.voice_channel:
+                logger.debug(f'Not Joined')
+                break
             if server.text_channel.id != message.channel.id:
                 logger.debug(f'Received message from other channel.')
                 break
-            if message.content.startswith(config['app']['cmd_prefix']):
+            if message.content.startswith(app.config.cmd_prefix):
                 logger.debug(f'Ignored starting with command prefix.')
                 break
 
@@ -420,12 +495,11 @@ if __name__ == '__main__':
                 break
 
             logger.info(f'Received message from user ({message.author.id}/{message.author.name}).')
-            logger.debug(f'Raw message content ({message.content})')
+            logger.debug(f'Raw message content ({message.content.replace(BACK_SLASH, "/")})')
             text_for_speak = make_speakable(message.content)
             logger.debug(f'Converted message content ({text_for_speak})')
 
-            source = VoiceSource()
-            source.text = text_for_speak
+            source = VoiceSource(text=text_for_speak)
             if message.author.id in server.users:
                 source.user = server.users[message.author.id]
             await server.voice_que.put(source)
@@ -438,11 +512,6 @@ if __name__ == '__main__':
     async def on_error(event, *args, **kwargs) -> None:
         """ エラーハンドラ
         コマンド以外でエラーが発生した場合のハンドラ
-
-        :param event: event
-        :param args: args
-        :param kwargs: kwargs
-        :return: None
         """
         logger.error(event)
         logger.error(traceback.format_exc())
@@ -452,10 +521,6 @@ if __name__ == '__main__':
     async def on_command_error(ctx: Context, error: Exception) -> None:
         """ コマンドエラーハンドラ
         コマンド内でエラーが発生した場合のハンドラ
-
-        :param ctx: Context
-        :param error: error
-        :return: None
         """
         logger.error(error)
         if isinstance(error, commands.CommandInvokeError):
@@ -464,6 +529,6 @@ if __name__ == '__main__':
 
 
     try:
-        client.run(config['app']['token'])
+        client.run(app.config.token)
     except:
         logger.exception('Running client interrupted with exception.')
