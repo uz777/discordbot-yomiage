@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import subprocess
@@ -82,13 +83,14 @@ else:
 
 @dataclass
 class User:
+    id = 0
     name = ''
     voice_type = ''
 
 
 @dataclass
-class VoiceQue:
-    user_id = 0
+class VoiceSource:
+    user = None
     text = ''
 
 
@@ -97,8 +99,27 @@ class Guild:
     id = 0
     text_channel = None
     voice_channel = None
-    voice_que = []
     users = {}
+    voice_que = asyncio.Queue()
+    play_next_voice = asyncio.Event()
+    task = None
+
+    def toggle_next_voice(self, error):
+        client.loop.call_soon_threadsafe(self.play_next_voice.set)
+
+    async def voice_play_task(self):
+        input_file = resource_path(f'{self.id}.txt')
+        output_file = resource_path(f'{self.id}.wav')
+        while True:
+            self.play_next_voice.clear()
+            current = await self.voice_que.get()
+            try:
+                create_wav(current, input_file, output_file)
+                source = discord.FFmpegPCMAudio(output_file)
+                self.voice_channel.guild.voice_client.play(source, after=self.toggle_next_voice)
+            except:
+                logger.exception('Exception in voice play task.')
+            await self.play_next_voice.wait()
 
 
 guilds = {}
@@ -147,60 +168,6 @@ def resource_path(relative_path):
     return os.path.join(root_path(), 'resource', relative_path)
 
 
-def remove_multi_line(text):
-    """ 2行目除去
-    2行目以降の文字列を除去して返却する
-
-    :param text: 変換前文字列
-    :return: 変換後文字列
-    """
-    return text.split('\n')[0]
-
-
-def remove_custom_emoji(text):
-    """ 絵文字削除
-    絵文字を削除して返却する
-
-    :param text: 変換前文字列
-    :return: 変換後文字列
-    """
-    pattern = r'<:[a-zA-Z0-9_]+:[0-9]+>'
-    return re.sub(pattern, '', text)
-
-
-def remove_mention(text):
-    """ メンション削除
-    メンションを削除して返却する
-    
-    :param text: 変換前文字列
-    :return: 変換後文字列
-    """
-    pattern = r'@[0-9]{18}'
-    return re.sub(pattern, '', text)
-
-
-def url_abb(text):
-    """ url置換
-    URLにパターンマッチする箇所を「ゆーあーるえる」へ置換して返却する
-
-    :param text: 変換前文字列
-    :return: 変換後文字列
-    """
-    pattern = "https?://[\w/:%#\$&\?\(\)~\.=\+\-]+"
-    return re.sub(pattern, 'ゆーあーるえる', text)
-
-
-def big_num_abb(text):
-    """ 長い数字の除去
-    5桁以上の数字を「たくさん」に置換して返却する
-
-    :param text: 変換前文字列
-    :return: 変換後文字列
-    """
-    pattern = "[0-9]{5,}"
-    return re.sub(pattern, 'たくさん', text)
-
-
 def make_speakable(text):
     """ 文字列可読化
     文字列を読み上げ可能な状態へ加工して返却する
@@ -208,25 +175,31 @@ def make_speakable(text):
     :param text: 変換前文字列
     :return: 変換後文字列
     """
-    text = remove_multi_line(text)
-    text = remove_mention(text)
-    text = url_abb(text)
-    text = big_num_abb(text)
-    return remove_custom_emoji(text)
+    # 2行目以降の削除
+    text = text.split('\n')[0]
+    # メンションの削除
+    text = re.sub(r'@\d{18}', '', text)
+    # URLの置換
+    text = re.sub(r"https?://[\w/:%#\$&\?\(\)~\.=\+\-]+", 'ゆーあーるえる', text)
+    # 5桁以上の数字の置換
+    text = re.sub(r'\d{5,}', 'たくさん', text)
+    # 絵文字の削除
+    text = re.sub(r'<:\w+:\d+>', '', text)
+    return text
 
 
-def create_wav(input_text, user):
+def create_wav(source, input_file, output_file):
     """ 読み上げ音声ファイル生成
     open_jtalkを使用し、文字列から読み上げ音声ファイルを生成する
 
-    :param input_text: 生成対象文字列
-    :param user: ユーザー
+    :param input_file:
+    :param output_file:
+    :param source: キュー
     :return: None
     """
-    input_file = resource_path('input.txt')
 
     with open(input_file, 'w', encoding='shift_jis') as file:
-        file.write(input_text)
+        file.write(source.text)
 
     command = 'open_jtalk.exe -x {x} -m {m} -r {r} -ow {ow} {input_file}'
 
@@ -235,8 +208,8 @@ def create_wav(input_text, user):
 
     # ボイスファイルのPath
     vt = config['app']['voice_type']
-    if user:
-        vt = user.voice_type
+    if source.user:
+        vt = source.user.voice_type
 
     m = resource_path(f'htsvoice\\{VOICE_TYPES[vt]}')
 
@@ -244,9 +217,8 @@ def create_wav(input_text, user):
     r = '1.0'
 
     # 出力ファイル名　and　Path
-    ow = resource_path('output.wav')
 
-    args = {'x': x, 'm': m, 'r': r, 'ow': ow, 'input_file': input_file}
+    args = {'x': x, 'm': m, 'r': r, 'ow': output_file, 'input_file': input_file}
 
     cmd = command.format(**args)
     logger.debug(f'Execute open_jtalk command ({cmd})')
@@ -287,35 +259,45 @@ if __name__ == '__main__':
         :return: None
         """
         logger.info(f'Received [join] cmd from user ({ctx.author.id}/{ctx.author.name}).')
+
         bot_vc = None
         bot_vc_cl = ctx.voice_client
         if bot_vc_cl:
             bot_vc = bot_vc_cl.channel
-        user_vc = ctx.author.voice.channel
-        if user_vc:
-            if bot_vc:
-                if bot_vc.id == user_vc.id:
-                    logger.warning(f'Already in users voice channel ({user_vc.id}/{user_vc.name}).')
-                    return
-                else:
-                    logger.info(f'Disconnecting from voice channel ({bot_vc.id}/{bot_vc.name}).')
-                    await bot_vc_cl.disconnect()
-            logger.info(f'Connecting users voice channel ({user_vc.id}/{user_vc.name})')
-            await user_vc.connect()
 
-            if ctx.guild.id in guilds:
-                guild = guilds[ctx.guild.id]
-                guild.voice_channel = user_vc
-                guild.text_channel = ctx.channel
-                guild.voice_que = []
-            else:
-                guild = Guild()
-                guild.id = ctx.guild.id
-                guild.voice_channel = user_vc
-                guild.text_channel = ctx.channel
-                guilds[ctx.guild.id] = guild
-        else:
+        user_vc = ctx.author.voice.channel
+        if not user_vc:
             logger.warning('User is not in voice channel.')
+            return
+
+        if bot_vc:
+            if bot_vc.id == user_vc.id:
+                guild = guilds[ctx.guild.id]
+                if guild.text_channel.id == ctx.channel.id:
+                    logger.warning(f'Nothing to do.')
+                else:
+                    logger.info(f'Change text channel ({guild.text_channel.name}) to ({ctx.channel.name})')
+                    guild.text_channel = ctx.channel
+                return
+            else:
+                logger.info(f'Disconnecting from voice channel ({bot_vc.id}/{bot_vc.name}).')
+                await bot_vc_cl.disconnect()
+
+        logger.info(f'Connecting users voice channel ({user_vc.id}/{user_vc.name})')
+        await user_vc.connect()
+
+        if ctx.guild.id in guilds:
+            guild = guilds[ctx.guild.id]
+            guild.voice_channel = user_vc
+            guild.text_channel = ctx.channel
+            guild.voice_que = []
+        else:
+            guild = Guild()
+            guild.id = ctx.guild.id
+            guild.voice_channel = user_vc
+            guild.text_channel = ctx.channel
+            guild.task = client.loop.create_task(guild.voice_play_task())
+            guilds[ctx.guild.id] = guild
 
 
     @client.command()
@@ -335,6 +317,7 @@ if __name__ == '__main__':
                 await ctx.voice_client.disconnect()
 
                 if ctx.guild.id in guilds:
+                    guilds[ctx.guild.id].task.cancel()
                     del guilds[ctx.guild.id]
 
         else:
@@ -358,10 +341,12 @@ if __name__ == '__main__':
         guild = guilds[ctx.guild.id]
         if ctx.author.id in guild.users:
             user = guild.users[ctx.author.id]
+            user.id = ctx.author.id
             user.name = ctx.author.name
             user.voice_type = arg
         else:
             user = User()
+            user.id = ctx.author.id
             user.name = ctx.author.name
             user.voice_type = arg
             guild.users[ctx.author.id] = user
@@ -414,34 +399,38 @@ if __name__ == '__main__':
         :return: None
         """
 
-        if not message.author.bot:
-            if message.guild.id in guilds:
-                guild = guilds[message.guild.id]
-                if guild.text_channel.id == message.channel.id:
-                    if not message.content.startswith(config['app']['cmd_prefix']):
-                        bot_vc_cl = message.guild.voice_client
-                        if bot_vc_cl:
-                            logger.info(f'Received message from user ({message.author.id}/{message.author.name}).')
-                            logger.debug(f'Raw message content ({message.content})')
-                            text_for_speak = make_speakable(message.content)
-                            logger.debug(f'Converted message content ({text_for_speak})')
-
-                            create_wav(
-                                text_for_speak,
-                                guild.users[message.author.id] if message.author.id in guild.users else None)
-
-                            source = discord.FFmpegPCMAudio(resource_path('output.wav'))
-                            bot_vc_cl.play(source)
-                        else:
-                            logger.debug(f'Has no Voice Client.')
-                    else:
-                        logger.debug(f'Ignored starting with command prefix.')
-                else:
-                    logger.debug(f'Received message from other channel.')
-            else:
+        while True:
+            if message.author.bot:
+                logger.debug('Ignored message from bot.')
+                break
+            if message.guild.id not in guilds:
                 logger.debug(f'Unknown guild id.')
-        else:
-            logger.debug('Ignored message from bot.')
+                break
+
+            guild = guilds[message.guild.id]
+            if guild.text_channel.id != message.channel.id:
+                logger.debug(f'Received message from other channel.')
+                break
+            if message.content.startswith(config['app']['cmd_prefix']):
+                logger.debug(f'Ignored starting with command prefix.')
+                break
+
+            bot_vc_cl = message.guild.voice_client
+            if not bot_vc_cl:
+                logger.debug(f'Has no Voice Client.')
+                break
+
+            logger.info(f'Received message from user ({message.author.id}/{message.author.name}).')
+            logger.debug(f'Raw message content ({message.content})')
+            text_for_speak = make_speakable(message.content)
+            logger.debug(f'Converted message content ({text_for_speak})')
+
+            source = VoiceSource()
+            source.text = text_for_speak
+            if message.author.id in guild.users:
+                source.user = guild.users[message.author.id]
+            await guild.voice_que.put(source)
+            break
 
         await client.process_commands(message)
 
