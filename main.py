@@ -330,7 +330,7 @@ if __name__ == '__main__':
 
 
     @client.command()
-    async def voice(ctx, arg) -> None:
+    async def voice(ctx: Context, arg: str) -> None:
         logger.info(f'Received [voice] cmd from user ({ctx.author.id}/{ctx.author.name}).')
 
         if ctx.guild.id not in servers:
