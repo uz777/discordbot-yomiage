@@ -192,6 +192,17 @@ class Yomiage:
             discord.opus.load_opus(resource_path('libopus.dll'))
 
 
+class JapaneseHelpCommand(commands.DefaultHelpCommand):
+    def __init__(self):
+        super().__init__()
+        self.commands_heading = "コマンド:"
+        self.no_category = "その他"
+        self.command_attrs["help"] = "コマンド一覧と簡単な説明を表示"
+
+    def get_ending_note(self):
+        return f'各コマンドの説明: {app.config.cmd_prefix}help <コマンド名>'
+
+
 app: Yomiage
 logger: Logger
 
@@ -280,7 +291,7 @@ def create_wav(source: VoiceSource, input_file: str, output_file: str) -> None:
 if __name__ == '__main__':
     app = Yomiage()
     logger = logging.getLogger('yomiage')
-    client = commands.Bot(command_prefix=app.config.cmd_prefix)
+    client = commands.Bot(command_prefix=app.config.cmd_prefix, help_command=JapaneseHelpCommand())
 
 
     @client.event
@@ -297,14 +308,22 @@ if __name__ == '__main__':
         logger.info('==========================================================')
         logger.info('Application successfully　launched. Now waiting users operation.')
 
+    @client.command()
+    async def version(ctx) -> None:
+        """ バージョン情報表示
+        バージョン情報を表示します
+        """
+
+        logger.info(f'Received [version] cmd from user ({ctx.author.name}).')
+        await ctx.send(f"```{get_logo()}```")
 
     @client.command()
     async def join(ctx) -> None:
-        """ 接続
-        ユーザーが参加しているボイスチャンネルに、botを参加させる
-        以降、コマンドを実行したテキストチャンネルの投稿が読み上げられる
+        """ 接続・読み上げ開始
+        ユーザーが参加しているボイスチャンネルにbotを参加させ、
+        コマンドを実行したテキストチャンネルの読み上げを開始します
         ボイスチャンネル・テキストチャンネルを変更したい場合は、
-        目的のボイスチャンネルに参加したうえで、目的のテキストチャンネルからコマンドを再実行する
+        目的のボイスチャンネルに参加したうえで、目的のテキストチャンネルからコマンドを再実行してください
         """
         logger.info(f'Received [join] cmd from user ({ctx.author.name}).')
 
@@ -349,9 +368,9 @@ if __name__ == '__main__':
 
     @client.command()
     async def bye(ctx: Context) -> None:
-        """ 切断
-        botが接続中のボイスチャンネルから切断する
-        テキストチャンネルからの読み上げを停止する
+        """ 切断・読み上げ停止
+        botを接続中のボイスチャンネルから切断し、
+        テキストチャンネルからの読み上げを停止します
         """
 
         logger.info(f'Received [bye] cmd from user ({ctx.author.name}).')
@@ -372,11 +391,12 @@ if __name__ == '__main__':
 
     @client.command()
     async def voice(ctx: Context, arg: str) -> None:
-        """ 声質変更
-        ユーザーの声質を、引数で指定したものへ変更する
-        本設定はユーザーごとに、接続～切断の間保持される
-        未接続状態では設定できない
-        <arg>に設定可能な値は以下の通り
+        """ ユーザー個別声質変更
+        ユーザーの声質を、引数で指定したものへ変更します
+        本設定はユーザーごとに、接続～切断の間保持されます
+        切断すると設定は破棄されます
+        また、未接続状態では設定できません
+        <arg>に設定可能な値は以下の通りです
         n : 男性１通常
         ma: 女性１怒り
         mb: 女性１照れ
@@ -412,7 +432,7 @@ if __name__ == '__main__':
     @client.command()
     async def default(ctx: Context) -> None:
         """ ユーザー個別設定削除
-        ユーザー個別設定を削除し、デフォルト状態へ戻す
+        ユーザー個別設定を削除し、デフォルト状態へ戻します
         """
         logger.info(f'Received [default] cmd from user ({ctx.author.name}).')
         if ctx.guild.id in app.servers:
@@ -426,7 +446,7 @@ if __name__ == '__main__':
     @client.command()
     async def status(ctx: Context) -> None:
         """ ボット状態確認
-        ボットの内部状態を確認する
+        ボットの内部状態を確認します
         """
         logger.info(f'Received [status] cmd from user ({ctx.author.name}).')
 
