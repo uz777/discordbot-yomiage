@@ -32,24 +32,29 @@ color:
   error: 0xFF0000
 
 msg:
-  success: "Success!"
-  warning: "Warning"
-  error: "Error"
-  join_s_yomiage_started: "`{text_channel}`への投稿を、`{voice_channel}`で読み上げます"
-  join_w_user_not_in_vc: "あなたはボイスチャンネルに参加していません\n`{cmd_prefix}join`コマンドは、ボイスチャンネルに参加してから実行してください"
-  join_w_nothing_to_do: "`{text_channel}`への投稿は、既に`{voice_channel}`で読み上げています\nチャンネルを切り替える場合は、あなた自身が対象のボイスチャンネルに参加し、読み上げたいテキストチャンネルで`{cmd_prefix}join`コマンドを実行してください"
-  bye_w_bot_not_in_vc: "まだ読み上げを行っていないので、切断の必要はありません"
-  bye_s_yomiage_stopped: "`{text_channel}`への投稿の、`{voice_channel}`での読み上げを終了しました"
-  voice_w_bot_not_joined: "未接続のため、このコマンドは実行できません\n先に`{cmd_prefix}join`コマンドを実行してください"
-  voice_w_arg_not_valid: "入力された引数({arg})は不正です\n指定できる引数は`{cmd_prefix}help voice`で確認することができます"
-  voice_s_voice_changed: "あなたの読み上げ声質を`{voice_type_name}`に変更しました"
-  default_w_nothing_to_do: "あなたは既にデフォルト設定で動作しています"
-  default_s_user_has_no_own_config: "あなたの個別設定を消去しました\nデフォルト設定で動作します"
-  task_e_failed: "音声再生タスクの実行中に異常が発生しました"
-  command_e_not_found: "そのようなコマンドはありません\n`{cmd_prefix}help`コマンドで、コマンドの一覧を確認してください"
-  command_e_failed: "コマンドの実行中に異常が発生しました"
-  command_e_something_failed: "動作中に異常が発生しました"
-
+  common:
+    success: "Success!"
+    warning: "Warning"
+    error: "Error"
+  join:
+    s_yomiage_started: "`{text_channel}`への投稿を、`{voice_channel}`で読み上げます"
+    w_user_not_in_vc: "あなたはボイスチャンネルに参加していません\n`{cmd_prefix}join`コマンドは、ボイスチャンネルに参加してから実行してください"
+    w_nothing_to_do: "`{text_channel}`への投稿は、既に`{voice_channel}`で読み上げています\nチャンネルを切り替える場合は、あなた自身が対象のボイスチャンネルに参加し、読み上げたいテキストチャンネルで`{cmd_prefix}join`コマンドを実行してください"
+  bye:
+    s_yomiage_stopped: "`{text_channel}`への投稿の、`{voice_channel}`での読み上げを終了しました"
+    w_bot_not_in_vc: "まだ読み上げを行っていないので、切断の必要はありません"
+  voice:
+    w_bot_not_joined: "未接続のため、このコマンドは実行できません\n先に`{cmd_prefix}join`コマンドを実行してください"
+    w_arg_not_valid: "入力された引数({arg})は不正です\n指定できる引数は`{cmd_prefix}help voice`で確認することができます"
+    s_voice_changed: "あなたの読み上げ声質を`{voice_type_name}`に変更しました"
+  default:
+    w_nothing_to_do: "あなたは既にデフォルト設定で動作しています"
+    s_user_has_no_own_config: "あなたの個別設定を消去しました\nデフォルト設定で動作します"
+  task:
+    e_failed: "音声再生タスクの実行中に異常が発生しました"
+  command:
+    e_not_found: "そのようなコマンドはありません\n`{cmd_prefix}help`コマンドで、コマンドの一覧を確認してください"
+    e_failed: "コマンドの実行中に異常が発生しました"
 
 # ログ出力設定
 # これ以降は、コンソール画面やログファイルに出力するログ設定です
