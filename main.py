@@ -11,7 +11,7 @@ from logging import Logger
 import yaml
 import re
 import discord
-from discord import VoiceChannel, VoiceClient, Message
+from discord import VoiceChannel, VoiceClient, Message, TextChannel
 from discord.ext import commands
 import logging.config
 
@@ -90,8 +90,8 @@ class Server:
     VC接続後、1サーバーに対して1つ割り当てられるインスタンス
     """
     id: int = 0
-    text_channel: discord.TextChannel = None
-    voice_channel: discord.VoiceChannel = None
+    text_channel: TextChannel = None
+    voice_channel: VoiceChannel = None
     users: dict[int, User] = field(default_factory=dict)
     voice_que = asyncio.Queue()
     play_next_voice = asyncio.Event()
@@ -128,14 +128,7 @@ class Server:
                 logger.exception('Exception in voice play task.')
                 tb = tb = traceback.format_exc()
                 if self.text_channel:
-                    embed = discord.Embed(
-                        color=app.config.color_error,
-                        title=app.config.error,
-                        description=app.config.task_e_failed
-                    )
-                    embed.add_field(name='ERROR', value=str(sys.exc_info()))
-                    embed.add_field(name='TRACEBACK', value=tb)
-                    await self.text_channel.send(embed=embed)
+                    await error_message(self.text_channel, app.config.task_e_failed, None, str(sys.exc_info()), tb)
 
 
 class Config:
@@ -341,6 +334,54 @@ def create_wav(source: VoiceSource, input_file: str, output_file: str) -> None:
     subprocess.run(cmd)
 
 
+async def success_message(ctx, text, text_param):
+    message = ''
+    if text:
+        message = text
+        if text_param:
+            message = message.format(**text_param)
+
+    await ctx.send(embed=discord.Embed(
+        color=app.config.color_success,
+        title=app.config.success,
+        description=message))
+
+
+async def warning_message(ctx, text, text_param):
+    message = ''
+    if text:
+        message = text
+        if text_param:
+            message = message.format(**text_param)
+
+    await ctx.reply(embed=discord.Embed(
+        color=app.config.color_warning,
+        title=app.config.warning,
+        description=message))
+
+
+async def error_message(ctx, text, text_param, error_text, traceback_text):
+    message = ''
+    if text:
+        message = text
+        if text_param:
+            message = message.format(**text_param)
+
+    embed = discord.Embed(
+        color=app.config.color_error,
+        title=app.config.error,
+        description=message)
+
+    if error_text and traceback_text:
+        embed.add_field(name='ERROR', value=error_text)
+        embed.add_field(name='TRACEBACK', value=traceback_text)
+
+    if isinstance(ctx, Context):
+        await ctx.reply(embed=embed)
+    elif isinstance(ctx, TextChannel):
+        await ctx.send(embed=embed)
+
+
 if __name__ == '__main__':
     app = Yomiage()
     logger = logging.getLogger('yomiage')
@@ -391,12 +432,9 @@ if __name__ == '__main__':
 
         if not user_vc:
             logger.warning('User is not in voice channel.')
-            await ctx.reply(embed=discord.Embed(
-                color=app.config.color_warning,
-                title=app.config.warning,
-                description=app.config.join_w_user_not_in_vc.format(**{
-                    'cmd_prefix': app.config.cmd_prefix
-                })))
+            await warning_message(ctx, app.config.join_w_user_not_in_vc, {
+                'cmd_prefix': app.config.cmd_prefix
+            })
             return
 
         if bot_vc:
@@ -404,24 +442,18 @@ if __name__ == '__main__':
                 server = app.servers[ctx.guild.id]
                 if server.text_channel.id == ctx.channel.id:
                     logger.warning(f'Nothing to do.')
-                    await ctx.reply(embed=discord.Embed(
-                        color=app.config.color_warning,
-                        title=app.config.warning,
-                        description=app.config.join_w_nothing_to_do.format(**{
-                            'cmd_prefix': app.config.cmd_prefix,
-                            'text_channel': ctx.channel.name,
-                            'voice_channel': user_vc.name
-                        })))
+                    await warning_message(ctx, app.config.join_w_nothing_to_do, {
+                        'cmd_prefix': app.config.cmd_prefix,
+                        'text_channel': ctx.channel.name,
+                        'voice_channel': user_vc.name
+                    })
                     return
                 else:
                     logger.info(f'Change text channel ({server.text_channel.name}) to ({ctx.channel.name})')
-                    await ctx.send(embed=discord.Embed(
-                        color=app.config.color_success,
-                        title=app.config.success,
-                        description=app.config.join_s_yomiage_started.format(**{
-                            'text_channel': ctx.channel.name,
-                            'voice_channel': user_vc.name
-                        })))
+                    await success_message(ctx, app.config.join_s_yomiage_started, {
+                        'text_channel': ctx.channel.name,
+                        'voice_channel': user_vc.name
+                    })
                     server.text_channel = ctx.channel
                 return
             else:
@@ -443,13 +475,10 @@ if __name__ == '__main__':
             server.task = client.loop.create_task(server.voice_play_task())
             app.servers[ctx.guild.id] = server
 
-        await ctx.send(embed=discord.Embed(
-            color=app.config.color_success,
-            title=app.config.success,
-            description=app.config.join_s_yomiage_started.format(**{
-                'text_channel': ctx.channel.name,
-                'voice_channel': user_vc.name
-            })))
+        await success_message(ctx, app.config.join_s_yomiage_started, {
+            'text_channel': ctx.channel.name,
+            'voice_channel': user_vc.name
+        })
 
 
     @client.command()
@@ -470,21 +499,14 @@ if __name__ == '__main__':
                 if ctx.guild.id in app.servers:
                     server = app.servers[ctx.guild.id]
                     server.task.cancel()
-                    await ctx.send(embed=discord.Embed(
-                        color=app.config.color_success,
-                        title=app.config.success,
-                        description=app.config.bye_s_yomiage_stopped.format(**{
-                            'text_channel': server.text_channel.name,
-                            'voice_channel': server.voice_channel.name
-                        })))
+                    await success_message(ctx, app.config.bye_s_yomiage_stopped, {
+                        'text_channel': server.text_channel.name,
+                        'voice_channel': server.voice_channel.name
+                    })
                     del app.servers[ctx.guild.id]
         else:
             logger.warning(f'Not in voice channel.')
-            await ctx.reply(embed=discord.Embed(
-                color=app.config.color_warning,
-                title=app.config.warning,
-                description=app.config.bye_w_bot_not_in_vc
-                ))
+            await warning_message(ctx, app.config.bye_w_bot_not_in_vc, None)
 
 
     @client.command()
@@ -510,25 +532,19 @@ if __name__ == '__main__':
 
         if ctx.guild.id not in app.servers:
             logger.warning(f'Not joined yet.')
-            await ctx.reply(embed=discord.Embed(
-                color=app.config.color_warning,
-                title=app.config.warning,
-                description=app.config.voice_w_bot_not_joined.format(**{
-                    'cmd_prefix': app.config.cmd_prefix
-                })))
+            await warning_message(ctx, app.config.voice_w_bot_not_joined, {
+                'cmd_prefix': app.config.cmd_prefix
+            })
             return
 
         if arg not in VOICE_TYPES:
             logger.warning(
                 f'Argument ({arg}) does not exist in voice types. setting app default ({app.config.voice_type})')
             arg = app.config.voice_type
-            await ctx.reply(embed=discord.Embed(
-                color=app.config.color_warning,
-                title=app.config.warning,
-                description=app.config.voice_w_arg_not_valid.format(**{
-                    'arg': arg,
-                    'cmd_prefix': app.config.cmd_prefix
-                })))
+            await warning_message(ctx, app.config.voice_w_arg_not_valid, {
+                'arg': arg,
+                'cmd_prefix': app.config.cmd_prefix
+            })
             return
 
         server = app.servers[ctx.guild.id]
@@ -540,12 +556,9 @@ if __name__ == '__main__':
         else:
             server.users[ctx.author.id] = User(ctx.author.id, ctx.author.name, arg)
 
-        await ctx.send(embed=discord.Embed(
-            color=app.config.color_success,
-            title=app.config.success,
-            description=app.config.voice_s_voice_changed.format(**{
-                'voice_type_name': arg
-            })))
+        await success_message(ctx, app.config.voice_s_voice_changed, {
+            'voice_type_name': arg
+        })
 
 
     @client.command()
@@ -558,16 +571,10 @@ if __name__ == '__main__':
             server = app.servers[ctx.guild.id]
             if ctx.author.id in server.users:
                 del server.users[ctx.author.id]
-                await ctx.send(embed=discord.Embed(
-                    color=app.config.color_success,
-                    title=app.config.success,
-                    description=app.config.default_s_user_has_no_own_config))
+                await success_message(ctx, app.config.default_s_user_has_no_own_config, None)
                 return
         logger.warning(f'Already default.')
-        await ctx.reply(embed=discord.Embed(
-            color=app.config.color_warning,
-            title=app.config.warning,
-            description=app.config.default_w_nothing_to_do))
+        await warning_message(ctx, app.config.default_w_nothing_to_do, None)
 
 
     @client.command()
@@ -672,25 +679,15 @@ if __name__ == '__main__':
         """
         logger.error(error)
         if isinstance(error, commands.CommandNotFound):
-            await ctx.reply(embed=discord.Embed(
-                color=app.config.color_error,
-                title=app.config.error,
-                description=app.config.command_e_not_found.format(**{
-                    'cmd_prefix': app.config.cmd_prefix
-                })))
+            await error_message(ctx, app.config.command_e_not_found, {
+                'cmd_prefix': app.config.cmd_prefix
+            }, None, None)
             return
 
         orig_error = getattr(error, "original", error)
         tb = ''.join(traceback.TracebackException.from_exception(orig_error).format())
         logger.error(tb)
-        embed = discord.Embed(
-            color=app.config.color_error,
-            title=app.config.error,
-            description=app.config.command_e_failed
-        )
-        embed.add_field(name='ERROR', value=str(orig_error))
-        embed.add_field(name='TRACEBACK', value=tb)
-        await ctx.reply(embed=embed)
+        await error_message(ctx, app.config.command_e_failed, None, str(orig_error), tb)
 
     try:
         client.run(app.config.token)
