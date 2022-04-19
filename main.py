@@ -23,6 +23,8 @@ VERSION
     アプリケーションバージョン
 """
 
+REPOSITORY = 'https://github.com/zosan777/discordbot-yomiage'
+
 
 def get_logo() -> str:
     """ ロゴ表示
@@ -36,8 +38,6 @@ def get_logo() -> str:
   ╚██╔╝  ██║   ██║██║╚██╔╝██║██║██╔══██║██║   ██║██╔══╝  
    ██║   ╚██████╔╝██║ ╚═╝ ██║██║██║  ██║╚██████╔╝███████╗
    ╚═╝    ╚═════╝ ╚═╝     ╚═╝╚═╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝
-                  VERSION : {VERSION}
-     https://github.com/zosan777/discordbot-yomiage
     """
 
 
@@ -443,7 +443,8 @@ if __name__ == '__main__':
         コマンドを受付可能となった際に実行される
         設定状態などをログに出力する
         """
-
+        logger.info(f'VERSION: {VERSION}')
+        logger.info(f'REPOSITORY: {REPOSITORY}')
         logger.info('==========================================================')
         logger.info(f'cmd_prefix: {app.config.app.cmd_prefix}')
         logger.info(f'voice_type: {app.config.app.voice_type} ({VOICE_TYPES[app.config.app.voice_type]})')
@@ -459,7 +460,15 @@ if __name__ == '__main__':
         """
 
         logger.info(f'Received [version] cmd from user ({ctx.author.name}).')
-        await ctx.send(f"```{get_logo()}```")
+        embed = discord.Embed(
+            color=app.config.color.success,
+            title=app.config.msg.common.success,
+            description='バージョン情報')
+        embed.add_field(name='APPNAME', value='yomiage')
+        embed.add_field(name='VERSION', value=VERSION)
+        embed.add_field(name='REPOSITORY', value=REPOSITORY)
+
+        await ctx.send(embed=embed)
 
 
     @client.command()
