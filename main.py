@@ -84,7 +84,7 @@ class VoiceSource:
 
 
 @dataclass
-class Server:
+class YomiageStatus:
     """ サーバー
     VC接続後、1サーバーに対して1つ割り当てられるインスタンス
     """
@@ -131,9 +131,9 @@ class Server:
 
 
 class App:
-    token: str = ''
-    cmd_prefix: str = '.'
-    voice_type: str = 'n'
+    token: str
+    cmd_prefix: str
+    voice_type: str
 
 
 class Color:
@@ -150,19 +150,18 @@ class CommonMsg:
 
 class JoinMsg:
     s_yomiage_started: str
-    w_user_not_in_vc: str
+    e_user_not_in_vc: str
     w_nothing_to_do: str
 
 
 class ByeMsg:
-    w_bot_not_in_vc: str
+    e_bot_not_in_vc: str
     s_yomiage_stopped: str
 
 
 class VoiceMsg:
     s_voice_changed: str
-    w_bot_not_joined: str
-    w_arg_not_valid: str
+    e_arg_not_valid: str
 
 
 class DefaultMsg:
@@ -196,6 +195,7 @@ class Config:
     app: App = App()
     color: Color = Color()
     msg: Msg = Msg()
+    users: dict[int, User] = {}
 
 
 class Yomiage:
@@ -204,7 +204,9 @@ class Yomiage:
     """
     config: Config = Config()
 
-    servers: dict[int, Server] = {}
+    server_configs: dict[int, Config] = {}
+
+    server_statuses: dict[int, YomiageStatus] = {}
 
     def __init__(self):
         """ 初期化処理
@@ -241,6 +243,7 @@ class Yomiage:
                 if vt in VOICE_TYPES:
                     self.config.app.voice_type = vt
                 else:
+                    self.config.app.voice_type = 'n'
                     logger.warning(f'Voice Type ({vt}) does not exist. Replaced to (n).')
 
                 # Color
@@ -256,16 +259,15 @@ class Yomiage:
                 # Msg Join
                 self.config.msg.join.s_yomiage_started = config_dict['msg']['join']['s_yomiage_started']
                 self.config.msg.join.w_nothing_to_do = config_dict['msg']['join']['w_nothing_to_do']
-                self.config.msg.join.w_user_not_in_vc = config_dict['msg']['join']['w_user_not_in_vc']
+                self.config.msg.join.e_user_not_in_vc = config_dict['msg']['join']['e_user_not_in_vc']
 
                 # Msg Bye
                 self.config.msg.bye.s_yomiage_stopped = config_dict['msg']['bye']['s_yomiage_stopped']
-                self.config.msg.bye.w_bot_not_in_vc = config_dict['msg']['bye']['w_bot_not_in_vc']
+                self.config.msg.bye.e_bot_not_in_vc = config_dict['msg']['bye']['e_bot_not_in_vc']
 
                 # Msg Voice
                 self.config.msg.voice.s_voice_changed = config_dict['msg']['voice']['s_voice_changed']
-                self.config.msg.voice.w_arg_not_valid = config_dict['msg']['voice']['w_arg_not_valid']
-                self.config.msg.voice.w_bot_not_joined = config_dict['msg']['voice']['w_arg_not_valid']
+                self.config.msg.voice.e_arg_not_valid = config_dict['msg']['voice']['e_arg_not_valid']
 
                 # Msg Default
                 self.config.msg.default.s_user_has_no_own_config = config_dict['msg']['default'][
@@ -436,6 +438,15 @@ if __name__ == '__main__':
     logger = logging.getLogger('yomiage')
     client = commands.Bot(command_prefix=app.config.app.cmd_prefix, help_command=JapaneseHelpCommand())
 
+    @client.event
+    async def on_guild_available(guild) -> None:
+        if guild.id not in app.server_configs:
+            app.server_configs[guild.id] = Config()
+
+    @client.event
+    async def on_guild_unavailable(guild) -> None:
+        if guild.id in app.server_configs:
+            del app.server_configs[guild.id]
 
     @client.event
     async def on_ready() -> None:
@@ -492,15 +503,15 @@ if __name__ == '__main__':
 
         if not user_vc:
             logger.warning('User is not in voice channel.')
-            await warning_message(ctx, app.config.msg.join.w_user_not_in_vc, {
+            await error_message(ctx, app.config.msg.join.e_user_not_in_vc, {
                 'cmd_prefix': app.config.app.cmd_prefix
             })
             return
 
         if bot_vc:
             if bot_vc.id == user_vc.id:
-                server = app.servers[ctx.guild.id]
-                if server.text_channel.id == ctx.channel.id:
+                server_status = app.server_statuses[ctx.guild.id]
+                if server_status.text_channel.id == ctx.channel.id:
                     logger.warning(f'Nothing to do.')
                     await warning_message(ctx, app.config.msg.join.w_nothing_to_do, {
                         'cmd_prefix': app.config.app.cmd_prefix,
@@ -509,12 +520,12 @@ if __name__ == '__main__':
                     })
                     return
                 else:
-                    logger.info(f'Change text channel ({server.text_channel.name}) to ({ctx.channel.name})')
+                    logger.info(f'Change text channel ({server_status.text_channel.name}) to ({ctx.channel.name})')
                     await success_message(ctx, app.config.msg.join.s_yomiage_started, {
                         'text_channel': ctx.channel.name,
                         'voice_channel': user_vc.name
                     })
-                    server.text_channel = ctx.channel
+                    server_status.text_channel = ctx.channel
                 return
             else:
                 logger.info(f'Disconnecting from voice channel ({bot_vc.name}).')
@@ -523,17 +534,17 @@ if __name__ == '__main__':
         logger.info(f'Connecting users voice channel ({user_vc.name})')
         await user_vc.connect()
 
-        if ctx.guild.id in app.servers:
-            server = app.servers[ctx.guild.id]
-            server.voice_channel = user_vc
-            server.text_channel = ctx.channel
+        if ctx.guild.id in app.server_statuses:
+            server_status = app.server_statuses[ctx.guild.id]
+            server_status.voice_channel = user_vc
+            server_status.text_channel = ctx.channel
         else:
-            server = Server()
-            server.id = ctx.guild.id
-            server.voice_channel = user_vc
-            server.text_channel = ctx.channel
-            server.task = client.loop.create_task(server.voice_play_task())
-            app.servers[ctx.guild.id] = server
+            server_status = YomiageStatus()
+            server_status.id = ctx.guild.id
+            server_status.voice_channel = user_vc
+            server_status.text_channel = ctx.channel
+            server_status.task = client.loop.create_task(server_status.voice_play_task())
+            app.server_statuses[ctx.guild.id] = server_status
 
         await success_message(ctx, app.config.msg.join.s_yomiage_started, {
             'text_channel': ctx.channel.name,
@@ -556,17 +567,17 @@ if __name__ == '__main__':
                 logger.info(f'Disconnecting from voice channel ({bot_vc.id}/{bot_vc.name}).')
 
                 await ctx.voice_client.disconnect()
-                if ctx.guild.id in app.servers:
-                    server = app.servers[ctx.guild.id]
+                if ctx.guild.id in app.server_statuses:
+                    server = app.server_statuses[ctx.guild.id]
                     server.task.cancel()
                     await success_message(ctx, app.config.msg.bye.s_yomiage_stopped, {
                         'text_channel': server.text_channel.name,
                         'voice_channel': server.voice_channel.name
                     })
-                    del app.servers[ctx.guild.id]
+                    del app.server_statuses[ctx.guild.id]
         else:
             logger.warning(f'Not in voice channel.')
-            await warning_message(ctx, app.config.msg.bye.w_bot_not_in_vc, None)
+            await error_message(ctx, app.config.msg.bye.e_bot_not_in_vc, None)
 
 
     @client.command()
@@ -590,31 +601,23 @@ if __name__ == '__main__':
         """
         logger.info(f'Received [voice] cmd from user ({ctx.author.name}).')
 
-        if ctx.guild.id not in app.servers:
-            logger.warning(f'Not joined yet.')
-            await warning_message(ctx, app.config.msg.voice.w_bot_not_joined, {
-                'cmd_prefix': app.config.app.cmd_prefix
-            })
-            return
-
         if arg not in VOICE_TYPES:
-            logger.warning(
-                f'Argument ({arg}) does not exist in voice types. setting app default ({app.config.app.voice_type})')
-            arg = app.config.app.voice_type
-            await warning_message(ctx, app.config.msg.voice.w_arg_not_valid, {
+            logger.error(
+                f'Argument ({arg}) does not exist in voice types.')
+            await error_message(ctx, app.config.msg.voice.e_arg_not_valid, {
                 'arg': arg,
                 'cmd_prefix': app.config.app.cmd_prefix
-            })
+            }, None, None)
             return
 
-        server = app.servers[ctx.guild.id]
-        if ctx.author.id in server.users:
-            user = server.users[ctx.author.id]
+        config = app.server_configs[ctx.guild.id]
+        if ctx.author.id in config.users:
+            user = config.users[ctx.author.id]
             user.id = ctx.author.id
             user.name = ctx.author.name
             user.voice_type = arg
         else:
-            server.users[ctx.author.id] = User(ctx.author.id, ctx.author.name, arg)
+            config.users[ctx.author.id] = User(ctx.author.id, ctx.author.name, arg)
 
         await success_message(ctx, app.config.msg.voice.s_voice_changed, {
             'voice_type_name': arg
@@ -627,10 +630,10 @@ if __name__ == '__main__':
         ユーザー個別設定を削除し、デフォルト状態へ戻します
         """
         logger.info(f'Received [default] cmd from user ({ctx.author.name}).')
-        if ctx.guild.id in app.servers:
-            server = app.servers[ctx.guild.id]
-            if ctx.author.id in server.users:
-                del server.users[ctx.author.id]
+        if ctx.guild.id in app.server_configs:
+            config = app.server_configs[ctx.guild.id]
+            if ctx.author.id in config.users:
+                del config.users[ctx.author.id]
                 await success_message(ctx, app.config.msg.default.s_user_has_no_own_config, None)
                 return
         logger.warning(f'Already default.')
@@ -644,8 +647,8 @@ if __name__ == '__main__':
         """
         logger.info(f'Received [status] cmd from user ({ctx.author.name}).')
 
-        if ctx.guild.id in app.servers:
-            server = app.servers[ctx.guild.id]
+        if ctx.guild.id in app.server_statuses:
+            server = app.server_statuses[ctx.guild.id]
             embed = discord.Embed(
                 color=app.config.color.success,
                 title='ステータス',
@@ -661,19 +664,21 @@ if __name__ == '__main__':
                 name='VC',
                 value=server.voice_channel.name)
 
-            table = None
-            if len(server.users) > 0:
-                raw = {}
-                for user in server.users.values():
-                    raw[user.name] = user.voice_type
+            if ctx.guild.id in app.server_configs:
+                config = app.server_configs[ctx.guild.id]
+                table = None
+                if len(config.users) > 0:
+                    raw = {}
+                    for user in config.users.values():
+                        raw[user.name] = user.voice_type
 
-                table = json.dumps(raw, indent=2, ensure_ascii=False)
+                    table = json.dumps(raw, indent=2, ensure_ascii=False)
 
-            embed.add_field(
-                name='SPECIFIC VOICETYPE',
-                value=f"```{BACK_SLASH}{table if table else 'None'}{BACK_SLASH}```",
-                inline=False
-            )
+                embed.add_field(
+                    name='SPECIFIC VOICETYPE',
+                    value=f"```{BACK_SLASH}{table if table else 'None'}{BACK_SLASH}```",
+                    inline=False
+                )
 
             await ctx.send(embed=embed)
 
@@ -689,15 +694,15 @@ if __name__ == '__main__':
             if message.author.bot:
                 logger.debug('Ignored message from bot.')
                 break
-            if message.guild.id not in app.servers:
+            if message.guild.id not in app.server_statuses:
                 logger.debug(f'Unknown server id.')
                 break
 
-            server = app.servers[message.guild.id]
-            if not server.text_channel or not server.voice_channel:
+            server_status = app.server_statuses[message.guild.id]
+            if not server_status.text_channel or not server_status.voice_channel:
                 logger.debug(f'Not Joined')
                 break
-            if server.text_channel.id != message.channel.id:
+            if server_status.text_channel.id != message.channel.id:
                 logger.debug(f'Received message from other channel.')
                 break
             if message.content.startswith(app.config.app.cmd_prefix):
@@ -715,9 +720,10 @@ if __name__ == '__main__':
             logger.debug(f'Converted message content ({text_for_speak})')
 
             source = VoiceSource(text=text_for_speak)
-            if message.author.id in server.users:
-                source.user = server.users[message.author.id]
-            await server.voice_que.put(source)
+            if message.guild.id in app.server_configs:
+                if message.author.id in app.server_configs[message.guild.id].users:
+                    source.user = app.server_configs[message.guild.id].users[message.author.id]
+            await server_status.voice_que.put(source)
             break
 
         await client.process_commands(message)
