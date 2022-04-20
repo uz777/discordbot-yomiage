@@ -65,7 +65,7 @@ BACK_SLASH
 
 
 @dataclass
-class User:
+class UserConfig:
     """ ユーザー
     ユーザーの個別設定を保持するクラス
     """
@@ -79,7 +79,7 @@ class VoiceSource:
     """ 音声化元
     音声化を行う元情報
     """
-    user: User = None
+    user_config: UserConfig = None
     text: str = ''
 
 
@@ -91,7 +91,7 @@ class YomiageStatus:
     id: int = 0
     text_channel: TextChannel = None
     voice_channel: VoiceChannel = None
-    users: dict[int, User] = field(default_factory=dict)
+    users: dict[int, UserConfig] = field(default_factory=dict)
     voice_que = asyncio.Queue()
     play_next_voice = asyncio.Event()
     task: Task = None
@@ -127,13 +127,7 @@ class YomiageStatus:
                 logger.exception('Exception in voice play task.')
                 tb = tb = traceback.format_exc()
                 if self.text_channel:
-                    await error_message(self.text_channel, app.config.msg.task.e_failed, None, str(sys.exc_info()), tb)
-
-
-class App:
-    token: str
-    cmd_prefix: str
-    voice_type: str
+                    await error_message(self.text_channel, app.msg.task.e_failed, None, str(sys.exc_info()), tb)
 
 
 class Color:
@@ -188,23 +182,27 @@ class Msg:
     command: CommandMsg = CommandMsg()
 
 
-class Config:
+class ServerConfig:
     """ 設定
     yaml設定内容を保持する
     """
-    app: App = App()
-    color: Color = Color()
-    msg: Msg = Msg()
-    users: dict[int, User] = {}
+    cmd_prefix: str
+    voice_type: str
+    users: dict[int, UserConfig] = {}
 
 
 class Yomiage:
     """ アプリケーション
     内部状態のルートクラス
     """
-    config: Config = Config()
+    token: str
+    cmd_prefix: str
+    voice_type: str
 
-    server_configs: dict[int, Config] = {}
+    color: Color = Color()
+    msg: Msg = Msg()
+
+    server_configs: dict[int, ServerConfig] = {}
 
     server_statuses: dict[int, YomiageStatus] = {}
 
@@ -237,49 +235,48 @@ class Yomiage:
                 config_dict = yaml.safe_load(yml)
                 logging.config.dictConfig(config_dict)
 
-                self.config.app.token = config_dict['app']['token']
-                self.config.app.cmd_prefix = config_dict['app']['cmd_prefix']
+                self.token = config_dict['app']['token']
+                self.cmd_prefix = config_dict['app']['cmd_prefix']
                 vt = config_dict['app']['voice_type']
                 if vt in VOICE_TYPES:
-                    self.config.app.voice_type = vt
+                    self.voice_type = vt
                 else:
-                    self.config.app.voice_type = 'n'
+                    self.voice_type = 'n'
                     logger.warning(f'Voice Type ({vt}) does not exist. Replaced to (n).')
 
                 # Color
-                self.config.color.success = config_dict['color']['success']
-                self.config.color.warning = config_dict['color']['warning']
-                self.config.color.error = config_dict['color']['error']
+                self.success = config_dict['color']['success']
+                self.warning = config_dict['color']['warning']
+                self.error = config_dict['color']['error']
 
                 # Msg Common
-                self.config.msg.common.success = config_dict['msg']['common']['success']
-                self.config.msg.common.warning = config_dict['msg']['common']['warning']
-                self.config.msg.common.error = config_dict['msg']['common']['error']
+                self.msg.common.success = config_dict['msg']['common']['success']
+                self.msg.common.warning = config_dict['msg']['common']['warning']
+                self.msg.common.error = config_dict['msg']['common']['error']
 
                 # Msg Join
-                self.config.msg.join.s_yomiage_started = config_dict['msg']['join']['s_yomiage_started']
-                self.config.msg.join.w_nothing_to_do = config_dict['msg']['join']['w_nothing_to_do']
-                self.config.msg.join.e_user_not_in_vc = config_dict['msg']['join']['e_user_not_in_vc']
+                self.msg.join.s_yomiage_started = config_dict['msg']['join']['s_yomiage_started']
+                self.msg.join.w_nothing_to_do = config_dict['msg']['join']['w_nothing_to_do']
+                self.msg.join.e_user_not_in_vc = config_dict['msg']['join']['e_user_not_in_vc']
 
                 # Msg Bye
-                self.config.msg.bye.s_yomiage_stopped = config_dict['msg']['bye']['s_yomiage_stopped']
-                self.config.msg.bye.e_bot_not_in_vc = config_dict['msg']['bye']['e_bot_not_in_vc']
+                self.msg.bye.s_yomiage_stopped = config_dict['msg']['bye']['s_yomiage_stopped']
+                self.msg.bye.e_bot_not_in_vc = config_dict['msg']['bye']['e_bot_not_in_vc']
 
                 # Msg Voice
-                self.config.msg.voice.s_voice_changed = config_dict['msg']['voice']['s_voice_changed']
-                self.config.msg.voice.e_arg_not_valid = config_dict['msg']['voice']['e_arg_not_valid']
+                self.msg.voice.s_voice_changed = config_dict['msg']['voice']['s_voice_changed']
+                self.msg.voice.e_arg_not_valid = config_dict['msg']['voice']['e_arg_not_valid']
 
                 # Msg Default
-                self.config.msg.default.s_user_has_no_own_config = config_dict['msg']['default'][
-                    's_user_has_no_own_config']
-                self.config.msg.default.w_nothing_to_do = config_dict['msg']['default']['w_nothing_to_do']
+                self.msg.default.s_user_has_no_own_config = config_dict['msg']['default']['s_user_has_no_own_config']
+                self.msg.default.w_nothing_to_do = config_dict['msg']['default']['w_nothing_to_do']
 
                 # Msg Task
-                self.config.msg.task.e_failed = config_dict['msg']['task']['e_failed']
+                self.msg.task.e_failed = config_dict['msg']['task']['e_failed']
 
                 # Msg Command
-                self.config.msg.command.e_not_found = config_dict['msg']['command']['e_not_found']
-                self.config.msg.command.e_failed = config_dict['msg']['command']['e_failed']
+                self.msg.command.e_not_found = config_dict['msg']['command']['e_not_found']
+                self.msg.command.e_failed = config_dict['msg']['command']['e_failed']
 
         # バイナリディレクトリにパスを通す(コマンド実行に必要)
         os.environ["PATH"] += os.pathsep + os.path.join(root_path(), 'resource')
@@ -297,7 +294,7 @@ class JapaneseHelpCommand(commands.DefaultHelpCommand):
         self.command_attrs["help"] = "コマンド一覧と簡単な説明を表示"
 
     def get_ending_note(self):
-        return f'各コマンドの説明: {app.config.app.cmd_prefix}help <コマンド名>'
+        return f'各コマンドの説明: {app.cmd_prefix}help <コマンド名>'
 
 
 app: Yomiage
@@ -366,9 +363,9 @@ def create_wav(source: VoiceSource, input_file: str, output_file: str) -> None:
     x = resource_path('dic')
 
     # ボイスファイルのPath
-    vt = app.config.app.voice_type
-    if source.user:
-        vt = source.user.voice_type
+    vt = app.voice_type
+    if source.user_config:
+        vt = source.user_config.voice_type
 
     m = resource_path(f'htsvoice\\{VOICE_TYPES[vt]}')
 
@@ -393,8 +390,8 @@ async def success_message(ctx, text, text_param):
             message = message.format(**text_param)
 
     await ctx.send(embed=discord.Embed(
-        color=app.config.color.success,
-        title=app.config.msg.common.success,
+        color=app.color.success,
+        title=app.msg.common.success,
         description=message))
 
 
@@ -406,8 +403,8 @@ async def warning_message(ctx, text, text_param):
             message = message.format(**text_param)
 
     await ctx.reply(embed=discord.Embed(
-        color=app.config.color.warning,
-        title=app.config.msg.common.warning,
+        color=app.color.warning,
+        title=app.msg.common.warning,
         description=message))
 
 
@@ -419,8 +416,8 @@ async def error_message(ctx, text, text_param, error_text, traceback_text):
             message = message.format(**text_param)
 
     embed = discord.Embed(
-        color=app.config.color.error,
-        title=app.config.msg.common.error,
+        color=app.color.error,
+        title=app.msg.common.error,
         description=message)
 
     if error_text and traceback_text:
@@ -436,17 +433,20 @@ async def error_message(ctx, text, text_param, error_text, traceback_text):
 if __name__ == '__main__':
     app = Yomiage()
     logger = logging.getLogger('yomiage')
-    client = commands.Bot(command_prefix=app.config.app.cmd_prefix, help_command=JapaneseHelpCommand())
+    client = commands.Bot(command_prefix=app.cmd_prefix, help_command=JapaneseHelpCommand())
+
 
     @client.event
     async def on_guild_available(guild) -> None:
         if guild.id not in app.server_configs:
-            app.server_configs[guild.id] = Config()
+            app.server_configs[guild.id] = ServerConfig()
+
 
     @client.event
     async def on_guild_unavailable(guild) -> None:
         if guild.id in app.server_configs:
             del app.server_configs[guild.id]
+
 
     @client.event
     async def on_ready() -> None:
@@ -457,8 +457,8 @@ if __name__ == '__main__':
         logger.info(f'VERSION: {VERSION}')
         logger.info(f'REPOSITORY: {REPOSITORY}')
         logger.info('==========================================================')
-        logger.info(f'cmd_prefix: {app.config.app.cmd_prefix}')
-        logger.info(f'voice_type: {app.config.app.voice_type} ({VOICE_TYPES[app.config.app.voice_type]})')
+        logger.info(f'cmd_prefix: {app.cmd_prefix}')
+        logger.info(f'voice_type: {app.voice_type} ({VOICE_TYPES[app.voice_type]})')
         logger.info(f'bot_user: {client.user.id}/{client.user.name}')
         logger.info('==========================================================')
         logger.info('Application successfully　launched. Now waiting users operation.')
@@ -472,8 +472,8 @@ if __name__ == '__main__':
 
         logger.info(f'Received [version] cmd from user ({ctx.author.name}).')
         embed = discord.Embed(
-            color=app.config.color.success,
-            title=app.config.msg.common.success,
+            color=app.color.success,
+            title=app.msg.common.success,
             description='バージョン情報')
         embed.add_field(name='APPNAME', value='yomiage')
         embed.add_field(name='VERSION', value=VERSION)
@@ -503,9 +503,9 @@ if __name__ == '__main__':
 
         if not user_vc:
             logger.warning('User is not in voice channel.')
-            await error_message(ctx, app.config.msg.join.e_user_not_in_vc, {
-                'cmd_prefix': app.config.app.cmd_prefix
-            })
+            await error_message(ctx, app.msg.join.e_user_not_in_vc, {
+                'cmd_prefix': app.cmd_prefix
+            }, None, None)
             return
 
         if bot_vc:
@@ -513,15 +513,15 @@ if __name__ == '__main__':
                 server_status = app.server_statuses[ctx.guild.id]
                 if server_status.text_channel.id == ctx.channel.id:
                     logger.warning(f'Nothing to do.')
-                    await warning_message(ctx, app.config.msg.join.w_nothing_to_do, {
-                        'cmd_prefix': app.config.app.cmd_prefix,
+                    await warning_message(ctx, app.msg.join.w_nothing_to_do, {
+                        'cmd_prefix': app.cmd_prefix,
                         'text_channel': ctx.channel.name,
                         'voice_channel': user_vc.name
                     })
                     return
                 else:
                     logger.info(f'Change text channel ({server_status.text_channel.name}) to ({ctx.channel.name})')
-                    await success_message(ctx, app.config.msg.join.s_yomiage_started, {
+                    await success_message(ctx, app.msg.join.s_yomiage_started, {
                         'text_channel': ctx.channel.name,
                         'voice_channel': user_vc.name
                     })
@@ -546,7 +546,7 @@ if __name__ == '__main__':
             server_status.task = client.loop.create_task(server_status.voice_play_task())
             app.server_statuses[ctx.guild.id] = server_status
 
-        await success_message(ctx, app.config.msg.join.s_yomiage_started, {
+        await success_message(ctx, app.msg.join.s_yomiage_started, {
             'text_channel': ctx.channel.name,
             'voice_channel': user_vc.name
         })
@@ -570,14 +570,14 @@ if __name__ == '__main__':
                 if ctx.guild.id in app.server_statuses:
                     server = app.server_statuses[ctx.guild.id]
                     server.task.cancel()
-                    await success_message(ctx, app.config.msg.bye.s_yomiage_stopped, {
+                    await success_message(ctx, app.msg.bye.s_yomiage_stopped, {
                         'text_channel': server.text_channel.name,
                         'voice_channel': server.voice_channel.name
                     })
                     del app.server_statuses[ctx.guild.id]
         else:
             logger.warning(f'Not in voice channel.')
-            await error_message(ctx, app.config.msg.bye.e_bot_not_in_vc, None)
+            await error_message(ctx, app.msg.bye.e_bot_not_in_vc, None, None, None)
 
 
     @client.command()
@@ -604,9 +604,9 @@ if __name__ == '__main__':
         if arg not in VOICE_TYPES:
             logger.error(
                 f'Argument ({arg}) does not exist in voice types.')
-            await error_message(ctx, app.config.msg.voice.e_arg_not_valid, {
+            await error_message(ctx, app.msg.voice.e_arg_not_valid, {
                 'arg': arg,
-                'cmd_prefix': app.config.app.cmd_prefix
+                'cmd_prefix': app.cmd_prefix
             }, None, None)
             return
 
@@ -617,9 +617,9 @@ if __name__ == '__main__':
             user.name = ctx.author.name
             user.voice_type = arg
         else:
-            config.users[ctx.author.id] = User(ctx.author.id, ctx.author.name, arg)
+            config.users[ctx.author.id] = UserConfig(ctx.author.id, ctx.author.name, arg)
 
-        await success_message(ctx, app.config.msg.voice.s_voice_changed, {
+        await success_message(ctx, app.msg.voice.s_voice_changed, {
             'voice_type_name': arg
         })
 
@@ -634,10 +634,10 @@ if __name__ == '__main__':
             config = app.server_configs[ctx.guild.id]
             if ctx.author.id in config.users:
                 del config.users[ctx.author.id]
-                await success_message(ctx, app.config.msg.default.s_user_has_no_own_config, None)
+                await success_message(ctx, app.msg.default.s_user_has_no_own_config, None)
                 return
         logger.warning(f'Already default.')
-        await warning_message(ctx, app.config.msg.default.w_nothing_to_do, None)
+        await warning_message(ctx, app.msg.default.w_nothing_to_do, None)
 
 
     @client.command()
@@ -650,7 +650,7 @@ if __name__ == '__main__':
         if ctx.guild.id in app.server_statuses:
             server = app.server_statuses[ctx.guild.id]
             embed = discord.Embed(
-                color=app.config.color.success,
+                color=app.color.success,
                 title='ステータス',
                 description='ボット内部状態')
 
@@ -705,7 +705,7 @@ if __name__ == '__main__':
             if server_status.text_channel.id != message.channel.id:
                 logger.debug(f'Received message from other channel.')
                 break
-            if message.content.startswith(app.config.app.cmd_prefix):
+            if message.content.startswith(app.cmd_prefix):
                 logger.debug(f'Ignored starting with command prefix.')
                 break
 
@@ -722,7 +722,7 @@ if __name__ == '__main__':
             source = VoiceSource(text=text_for_speak)
             if message.guild.id in app.server_configs:
                 if message.author.id in app.server_configs[message.guild.id].users:
-                    source.user = app.server_configs[message.guild.id].users[message.author.id]
+                    source.user_config = app.server_configs[message.guild.id].users[message.author.id]
             await server_status.voice_que.put(source)
             break
 
@@ -745,18 +745,18 @@ if __name__ == '__main__':
         """
         logger.error(error)
         if isinstance(error, commands.CommandNotFound):
-            await error_message(ctx, app.config.msg.command.e_not_found, {
-                'cmd_prefix': app.config.app.cmd_prefix
+            await error_message(ctx, app.msg.command.e_not_found, {
+                'cmd_prefix': app.cmd_prefix
             }, None, None)
             return
 
         orig_error = getattr(error, "original", error)
         tb = ''.join(traceback.TracebackException.from_exception(orig_error).format())
         logger.error(tb)
-        await error_message(ctx, app.config.msg.command.e_failed, None, str(orig_error), tb)
+        await error_message(ctx, app.msg.command.e_failed, None, str(orig_error), tb)
 
 
     try:
-        client.run(app.config.app.token)
+        client.run(app.token)
     except:
         logger.exception('Running client interrupted with exception.')
