@@ -57,6 +57,21 @@ VOICE_TYPES = {
 声質略記名とファイル名のマップ
 """
 
+VOICE_TYPE_NAMES = {
+    'n': '通常',
+    'ma': '女性１怒り',
+    'mb': '女性１照れ',
+    'mh': '女性１喜び',
+    'mn': '女性１通常',
+    'ms': '女性１悲しみ',
+    'ta': '男性１怒り',
+    'th': '男性１喜び',
+    'tn': '男性１通常',
+    'ts': '男性１悲しみ',
+    'd': 'デフォルト',
+    '': 'デフォルト'
+}
+
 BACK_SLASH = '\n'
 """
 BACK_SLASH
@@ -153,14 +168,18 @@ class ByeMsg:
     s_yomiage_stopped: str
 
 
-class VoiceMsg:
+class SPrefixMsg:
+    s_prefix_changed: str
+
+
+class SVoiceMsg:
     s_voice_changed: str
     e_arg_not_valid: str
 
 
-class DefaultMsg:
-    s_user_has_no_own_config: str
-    w_nothing_to_do: str
+class VoiceMsg:
+    s_voice_changed: str
+    e_arg_not_valid: str
 
 
 class TaskMsg:
@@ -176,8 +195,9 @@ class Msg:
     common: CommonMsg = CommonMsg()
     join: JoinMsg = JoinMsg()
     bye: ByeMsg = ByeMsg()
+    s_prefix: SPrefixMsg = SPrefixMsg()
+    s_voice: SVoiceMsg = SVoiceMsg()
     voice: VoiceMsg = VoiceMsg()
-    default: DefaultMsg = DefaultMsg()
     task: TaskMsg = TaskMsg()
     command: CommandMsg = CommandMsg()
 
@@ -186,8 +206,8 @@ class ServerConfig:
     """ 設定
     yaml設定内容を保持する
     """
-    cmd_prefix: str
-    voice_type: str
+    cmd_prefix: str = None
+    voice_type: str = None
     users: dict[int, UserConfig] = {}
 
 
@@ -245,9 +265,9 @@ class Yomiage:
                     logger.warning(f'Voice Type ({vt}) does not exist. Replaced to (n).')
 
                 # Color
-                self.success = config_dict['color']['success']
-                self.warning = config_dict['color']['warning']
-                self.error = config_dict['color']['error']
+                self.color.success = config_dict['color']['success']
+                self.color.warning = config_dict['color']['warning']
+                self.color.error = config_dict['color']['error']
 
                 # Msg Common
                 self.msg.common.success = config_dict['msg']['common']['success']
@@ -263,13 +283,16 @@ class Yomiage:
                 self.msg.bye.s_yomiage_stopped = config_dict['msg']['bye']['s_yomiage_stopped']
                 self.msg.bye.e_bot_not_in_vc = config_dict['msg']['bye']['e_bot_not_in_vc']
 
+                # Msg SPrefix
+                self.msg.s_prefix.s_prefix_changed = config_dict['msg']['s_prefix']['s_prefix_changed']
+
+                # Msg SVoice
+                self.msg.s_voice.s_voice_changed = config_dict['msg']['s_voice']['s_voice_changed']
+                self.msg.s_voice.e_arg_not_valid = config_dict['msg']['s_voice']['e_arg_not_valid']
+
                 # Msg Voice
                 self.msg.voice.s_voice_changed = config_dict['msg']['voice']['s_voice_changed']
                 self.msg.voice.e_arg_not_valid = config_dict['msg']['voice']['e_arg_not_valid']
-
-                # Msg Default
-                self.msg.default.s_user_has_no_own_config = config_dict['msg']['default']['s_user_has_no_own_config']
-                self.msg.default.w_nothing_to_do = config_dict['msg']['default']['w_nothing_to_do']
 
                 # Msg Task
                 self.msg.task.e_failed = config_dict['msg']['task']['e_failed']
@@ -357,26 +380,15 @@ def create_wav(source: VoiceSource, input_file: str, output_file: str) -> None:
     with open(input_file, 'w', encoding='shift_jis') as file:
         file.write(source.text)
 
-    command = 'open_jtalk.exe -x {x} -m {m} -r {r} -ow {ow} {input_file}'
+    args = {
+        'x': resource_path('dic'),  # 辞書のPath
+        'm': resource_path(f'htsvoice\\{VOICE_TYPES[source.user_config.voice_type]}'),  # ボイスファイルのPath
+        'r': '1.0',  # 発声のスピード
+        'ow': output_file,  # 出力ファイル名
+        'input_file': input_file  # 入力ファイル名
+    }
 
-    # 辞書のPath
-    x = resource_path('dic')
-
-    # ボイスファイルのPath
-    vt = app.voice_type
-    if source.user_config:
-        vt = source.user_config.voice_type
-
-    m = resource_path(f'htsvoice\\{VOICE_TYPES[vt]}')
-
-    # 発声のスピード
-    r = '1.0'
-
-    # 出力ファイル名　and　Path
-
-    args = {'x': x, 'm': m, 'r': r, 'ow': output_file, 'input_file': input_file}
-
-    cmd = command.format(**args)
+    cmd = 'open_jtalk.exe -x {x} -m {m} -r {r} -ow {ow} {input_file}'.format(**args)
     logger.debug(f'Execute open_jtalk command ({cmd})')
 
     subprocess.run(cmd)
@@ -428,6 +440,37 @@ async def error_message(ctx, text, text_param, error_text, traceback_text):
         await ctx.reply(embed=embed)
     elif isinstance(ctx, TextChannel):
         await ctx.send(embed=embed)
+
+
+def get_layered_server_cmd_prefix(guild_id: int) -> str:
+    prefix = app.cmd_prefix
+    if guild_id in app.server_configs:
+        server_config = app.server_configs[guild_id]
+        if server_config.cmd_prefix:
+            prefix = server_config.cmd_prefix
+    return prefix
+
+
+def get_layered_server_voice_type(guild_id: int) -> str:
+    voice_type = app.voice_type
+    if guild_id in app.server_configs:
+        server_config = app.server_configs[guild_id]
+        if server_config.voice_type:
+            voice_type = server_config.voice_type
+    return voice_type
+
+
+def get_layered_user_voice_type(guild_id: int, user_id: int) -> str:
+    voice_type = app.voice_type
+    if guild_id in app.server_configs:
+        server_config = app.server_configs[guild_id]
+        if server_config.voice_type:
+            voice_type = server_config.voice_type
+        if user_id in server_config.users:
+            user_config = server_config.users[user_id]
+            if user_config.voice_type:
+                voice_type = user_config.voice_type
+    return voice_type
 
 
 if __name__ == '__main__':
@@ -581,14 +624,26 @@ if __name__ == '__main__':
 
 
     @client.command()
-    async def voice(ctx: Context, arg: str) -> None:
-        """ ユーザー個別声質変更
-        ユーザーの声質を、引数で指定したものへ変更します
-        本設定はユーザーごとに、接続～切断の間保持されます
-        切断すると設定は破棄されます
-        また、未接続状態では設定できません
+    async def s_prefix(ctx: Context, arg: str) -> None:
+        """ コマンドプレフィックス変更
+        サーバーのコマンドプレフィックスを、引数で指定したものへ変更します
+        """
+        logger.info(f'Received [s_prefix] cmd from user ({ctx.author.name}).')
+        if ctx.guild.id in app.server_configs:
+            server_config = app.server_configs[ctx.guild.id]
+            server_config.cmd_prefix = arg
+
+        await success_message(ctx, app.msg.s_prefix.s_prefix_changed, {
+            'cmd_prefix': arg
+        })
+
+
+    @client.command()
+    async def s_voice(ctx: Context, arg: str) -> None:
+        """ サーバー個別声質変更
+        サーバーのデフォルトの声質を、引数で指定したものへ変更します
         <arg>に設定可能な値は以下の通りです
-        n : 男性１通常
+        n : 通常
         ma: 女性１怒り
         mb: 女性１照れ
         mh: 女性１喜び
@@ -598,90 +653,158 @@ if __name__ == '__main__':
         th: 男性１喜び
         tn: 男性１通常
         ts: 男性１悲しみ
+        --------------
+        d:  デフォルト
+        """
+        logger.info(f'Received [s_voice] cmd from user ({ctx.author.name}).')
+        if arg not in VOICE_TYPE_NAMES:
+            await error_message(ctx, app.msg.s_voice.e_arg_not_valid, {
+                'arg': arg,
+                'cmd_prefix': app.cmd_prefix
+            }, None, None)
+            return
+
+        if arg == 'd':
+            arg = ''
+
+        server_config = app.server_configs[ctx.guild.id]
+        server_config.voice_type = arg
+
+        await success_message(ctx, app.msg.s_voice.s_voice_changed, {
+            'voice_type_name': VOICE_TYPE_NAMES[arg]
+        })
+
+    @client.command()
+    async def voice(ctx: Context, arg: str) -> None:
+        """ ユーザー個別声質変更
+        ユーザーの声質を、引数で指定したものへ変更します
+        <arg>に設定可能な値は以下の通りです
+        n : 通常
+        ma: 女性１怒り
+        mb: 女性１照れ
+        mh: 女性１喜び
+        mn: 女性１通常
+        ms: 女性１悲しみ
+        ta: 男性１怒り
+        th: 男性１喜び
+        tn: 男性１通常
+        ts: 男性１悲しみ
+        --------------
+        d:  デフォルト
         """
         logger.info(f'Received [voice] cmd from user ({ctx.author.name}).')
 
-        if arg not in VOICE_TYPES:
-            logger.error(
-                f'Argument ({arg}) does not exist in voice types.')
+        if arg not in VOICE_TYPE_NAMES:
+            logger.error(f'Argument ({arg}) does not exist in voice types.')
             await error_message(ctx, app.msg.voice.e_arg_not_valid, {
                 'arg': arg,
                 'cmd_prefix': app.cmd_prefix
             }, None, None)
             return
 
-        config = app.server_configs[ctx.guild.id]
-        if ctx.author.id in config.users:
-            user = config.users[ctx.author.id]
+        if arg == 'd':
+            arg = ''
+
+        server_config = app.server_configs[ctx.guild.id]
+        if ctx.author.id in server_config.users:
+            user = server_config.users[ctx.author.id]
             user.id = ctx.author.id
             user.name = ctx.author.name
             user.voice_type = arg
         else:
-            config.users[ctx.author.id] = UserConfig(ctx.author.id, ctx.author.name, arg)
+            server_config.users[ctx.author.id] = UserConfig(
+                ctx.author.id,
+                ctx.author.name,
+                arg)
 
         await success_message(ctx, app.msg.voice.s_voice_changed, {
-            'voice_type_name': arg
+            'voice_type_name': VOICE_TYPE_NAMES[arg]
         })
 
 
     @client.command()
-    async def default(ctx: Context) -> None:
-        """ ユーザー個別設定削除
-        ユーザー個別設定を削除し、デフォルト状態へ戻します
+    async def s_status(ctx: Context) -> None:
+        """ サーバー状態確認
+        ボットの内部状態を確認します
         """
-        logger.info(f'Received [default] cmd from user ({ctx.author.name}).')
-        if ctx.guild.id in app.server_configs:
-            config = app.server_configs[ctx.guild.id]
-            if ctx.author.id in config.users:
-                del config.users[ctx.author.id]
-                await success_message(ctx, app.msg.default.s_user_has_no_own_config, None)
-                return
-        logger.warning(f'Already default.')
-        await warning_message(ctx, app.msg.default.w_nothing_to_do, None)
+        logger.info(f'Received [s_status] cmd from user ({ctx.author.name}).')
+
+        embed = discord.Embed(
+            color=app.color.success,
+            title=app.msg.common.success,
+            description='サーバー状態')
+
+        text_channel = 'なし'
+        voice_channel = 'なし'
+        if ctx.guild.id in app.server_statuses:
+            server_status = app.server_statuses[ctx.guild.id]
+            text_channel = server_status.text_channel.name
+            voice_channel = server_status.voice_channel.name
+
+        embed.add_field(
+            name='TEXT',
+            value=text_channel)
+        embed.add_field(
+            name='->',
+            value='to')
+        embed.add_field(
+            name='VC',
+            value=voice_channel)
+
+        await ctx.send(embed=embed)
 
 
     @client.command()
-    async def status(ctx: Context) -> None:
-        """ ボット状態確認
-        ボットの内部状態を確認します
+    async def s_config(ctx: Context) -> None:
+        """ サーバー設定状態確認
         """
-        logger.info(f'Received [status] cmd from user ({ctx.author.name}).')
+        logger.info(f'Received [s_config] cmd from user ({ctx.author.name}).')
 
-        if ctx.guild.id in app.server_statuses:
-            server = app.server_statuses[ctx.guild.id]
-            embed = discord.Embed(
-                color=app.color.success,
-                title='ステータス',
-                description='ボット内部状態')
+        cmd_prefix = 'デフォルト'
+        voice_type = ''
+        if ctx.guild.id in app.server_configs:
+            server_config = app.server_configs[ctx.guild.id]
+            if server_config.cmd_prefix:
+                cmd_prefix = server_config.cmd_prefix
+            voice_type = server_config.voice_type
 
-            embed.add_field(
-                name='TEXT',
-                value=server.text_channel.name)
-            embed.add_field(
-                name='->',
-                value='to')
-            embed.add_field(
-                name='VC',
-                value=server.voice_channel.name)
+        embed = discord.Embed(
+            color=app.color.success,
+            title=app.msg.common.success,
+            description='サーバー設定状態(カッコ内は継承後設定値)')
 
-            if ctx.guild.id in app.server_configs:
-                config = app.server_configs[ctx.guild.id]
-                table = None
-                if len(config.users) > 0:
-                    raw = {}
-                    for user in config.users.values():
-                        raw[user.name] = user.voice_type
+        embed.add_field(
+            name='CMD_PREFIX',
+            value=f'{cmd_prefix} ({get_layered_server_cmd_prefix(ctx.guild.id)})')
 
-                    table = json.dumps(raw, indent=2, ensure_ascii=False)
+        embed.add_field(
+            name='VOICE_TYPE',
+            value=f'{VOICE_TYPE_NAMES[voice_type]} ({VOICE_TYPE_NAMES[get_layered_server_voice_type(ctx.guild.id)]})')
 
-                embed.add_field(
-                    name='SPECIFIC VOICETYPE',
-                    value=f"```{BACK_SLASH}{table if table else 'None'}{BACK_SLASH}```",
-                    inline=False
-                )
+        await ctx.send(embed=embed)
 
-            await ctx.send(embed=embed)
 
+    @client.command()
+    async def config(ctx: Context) -> None:
+        """ ユーザー設定状態確認
+        """
+        logger.info(f'Received [config] cmd from user ({ctx.author.name}).')
+        voice_type = ''
+        if ctx.guild.id in app.server_configs:
+            server_config = app.server_configs[ctx.guild.id]
+            if ctx.author.id in server_config.users:
+                voice_type = server_config.users[ctx.author.id].voice_type
+
+        embed = discord.Embed(
+            color=app.color.success,
+            title=app.msg.common.success,
+            description='ユーザー設定状態(カッコ内は継承後設定値)')
+
+        embed.add_field(
+            name='VOICE_TYPE',
+            value=f'{VOICE_TYPE_NAMES[voice_type]} ({VOICE_TYPE_NAMES[get_layered_user_voice_type(ctx.guild.id, ctx.author.id)]})')
+
+        await ctx.send(embed=embed)
 
     @client.event
     async def on_message(message: Message) -> None:
@@ -720,9 +843,11 @@ if __name__ == '__main__':
             logger.debug(f'Converted message content ({text_for_speak})')
 
             source = VoiceSource(text=text_for_speak)
-            if message.guild.id in app.server_configs:
-                if message.author.id in app.server_configs[message.guild.id].users:
-                    source.user_config = app.server_configs[message.guild.id].users[message.author.id]
+            user_for_voice = UserConfig()
+            user_for_voice.id = message.author.id
+            user_for_voice.name = message.author.name
+            user_for_voice.voice_type = get_layered_user_voice_type(message.guild.id, message.author.id)
+            source.user_config = user_for_voice
             await server_status.voice_que.put(source)
             break
 
