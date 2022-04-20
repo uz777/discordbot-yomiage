@@ -1,5 +1,4 @@
 import asyncio
-import json
 import os
 import subprocess
 import sys
@@ -7,15 +6,15 @@ import traceback
 from asyncio import Task
 from dataclasses import dataclass, field
 from logging import Logger
+import logging.config
+import re
 
 import yaml
-import re
 import discord
 from discord import VoiceChannel, VoiceClient, Message, TextChannel
 from discord.ext import commands
-import logging.config
-
 from discord.ext.commands import Context
+
 
 VERSION = '0.1.0'
 """
@@ -317,7 +316,7 @@ class JapaneseHelpCommand(commands.DefaultHelpCommand):
         self.command_attrs["help"] = "コマンド一覧と簡単な説明を表示"
 
     def get_ending_note(self):
-        return f'各コマンドの説明: {app.cmd_prefix}help <コマンド名>'
+        return f'各コマンドの説明: help <コマンド名>'
 
 
 app: Yomiage
@@ -473,10 +472,14 @@ def get_layered_user_voice_type(guild_id: int, user_id: int) -> str:
     return voice_type
 
 
+async def determine_prefix(bot, message) -> str:
+    return get_layered_server_cmd_prefix(message.guild.id)
+
+
 if __name__ == '__main__':
     app = Yomiage()
     logger = logging.getLogger('yomiage')
-    client = commands.Bot(command_prefix=app.cmd_prefix, help_command=JapaneseHelpCommand())
+    client = commands.Bot(command_prefix=determine_prefix, help_command=JapaneseHelpCommand())
 
 
     @client.event
@@ -526,7 +529,7 @@ if __name__ == '__main__':
 
 
     @client.command()
-    async def join(ctx) -> None:
+    async def join(ctx: Context) -> None:
         """ 接続・読み上げ開始
         ユーザーが参加しているボイスチャンネルにbotを参加させ、
         コマンドを実行したテキストチャンネルの読み上げを開始します
@@ -547,7 +550,7 @@ if __name__ == '__main__':
         if not user_vc:
             logger.warning('User is not in voice channel.')
             await error_message(ctx, app.msg.join.e_user_not_in_vc, {
-                'cmd_prefix': app.cmd_prefix
+                'cmd_prefix': ctx.prefix
             }, None, None)
             return
 
@@ -557,7 +560,7 @@ if __name__ == '__main__':
                 if server_status.text_channel.id == ctx.channel.id:
                     logger.warning(f'Nothing to do.')
                     await warning_message(ctx, app.msg.join.w_nothing_to_do, {
-                        'cmd_prefix': app.cmd_prefix,
+                        'cmd_prefix': ctx.prefix,
                         'text_channel': ctx.channel.name,
                         'voice_channel': user_vc.name
                     })
@@ -660,7 +663,7 @@ if __name__ == '__main__':
         if arg not in VOICE_TYPE_NAMES:
             await error_message(ctx, app.msg.s_voice.e_arg_not_valid, {
                 'arg': arg,
-                'cmd_prefix': app.cmd_prefix
+                'cmd_prefix': ctx.prefix
             }, None, None)
             return
 
@@ -698,7 +701,7 @@ if __name__ == '__main__':
             logger.error(f'Argument ({arg}) does not exist in voice types.')
             await error_message(ctx, app.msg.voice.e_arg_not_valid, {
                 'arg': arg,
-                'cmd_prefix': app.cmd_prefix
+                'cmd_prefix': ctx.prefix
             }, None, None)
             return
 
@@ -828,7 +831,7 @@ if __name__ == '__main__':
             if server_status.text_channel.id != message.channel.id:
                 logger.debug(f'Received message from other channel.')
                 break
-            if message.content.startswith(app.cmd_prefix):
+            if message.content.startswith(get_layered_server_cmd_prefix(message.author.id)):
                 logger.debug(f'Ignored starting with command prefix.')
                 break
 
@@ -871,7 +874,7 @@ if __name__ == '__main__':
         logger.error(error)
         if isinstance(error, commands.CommandNotFound):
             await error_message(ctx, app.msg.command.e_not_found, {
-                'cmd_prefix': app.cmd_prefix
+                'cmd_prefix': ctx.prefix
             }, None, None)
             return
 
