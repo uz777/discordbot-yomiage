@@ -708,9 +708,11 @@ if __name__ == '__main__':
 
 
     @client.command()
+    @commands.has_permissions(administrator=True)
     async def s_prefix(ctx: Context, arg: str) -> None:
         """ コマンドプレフィックス変更
         サーバーのコマンドプレフィックスを、引数で指定したものへ変更します
+        このコマンドはサーバー管理者のみが実行できます
         """
         logger.info(f'Received [s_prefix] cmd from user ({ctx.author.name}).')
         if ctx.guild.id in app.server_configs:
@@ -723,9 +725,11 @@ if __name__ == '__main__':
 
 
     @client.command()
+    @commands.has_permissions(administrator=True)
     async def s_voice(ctx: Context, arg: str) -> None:
         """ サーバー個別声質変更
         サーバーのデフォルトの声質を、引数で指定したものへ変更します
+        このコマンドはサーバー管理者のみが実行できます
         <arg>に設定可能な値は以下の通りです
         n : 通常
         ma: 女性１怒り
