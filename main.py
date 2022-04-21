@@ -1,34 +1,35 @@
 import asyncio
+import logging.config
 import os
+import re
 import subprocess
 import sys
 import traceback
 from asyncio import Task
 from dataclasses import dataclass, field
 from logging import Logger
-import logging.config
-import re
 
-import yaml
 import discord
+import yaml
 from discord import VoiceChannel, VoiceClient, Message, TextChannel
 from discord.ext import commands
 from discord.ext.commands import Context
 
-
 VERSION = '0.1.0'
 """
-VERSION
-    アプリケーションバージョン
+アプリケーションバージョン
 """
 
 REPOSITORY = 'https://github.com/zosan777/discordbot-yomiage'
+"""
+リポジトリURL
+"""
 
 
 def get_logo() -> str:
     """ ロゴ表示
 
-    :return: None
+    :return: ロゴ文字列
     """
     return f"""
 ██╗   ██╗ ██████╗ ███╗   ███╗██╗ █████╗  ██████╗ ███████╗
@@ -70,11 +71,13 @@ VOICE_TYPE_NAMES = {
     'd': 'デフォルト',
     '': 'デフォルト'
 }
+"""
+声質略記名と表示名のマップ
+"""
 
 BACK_SLASH = '\n'
 """
-BACK_SLASH
-    改行文字
+改行文字
 """
 
 
@@ -145,52 +148,72 @@ class YomiageStatus:
 
 
 class Color:
+    """ 色設定保持クラス
+    """
     success: int = 0
     warning: int = 0
     error: int = 0
 
 
 class CommonMsg:
+    """ 共通メッセージ設定保持クラス
+    """
     success: str
     warning: str
     error: str
 
 
 class JoinMsg:
+    """ joinコマンドメッセージ設定保持クラス
+    """
     s_yomiage_started: str
     e_user_not_in_vc: str
     w_nothing_to_do: str
 
 
 class ByeMsg:
+    """ byeコマンドメッセージ設定保持クラス
+    """
     e_bot_not_in_vc: str
     s_yomiage_stopped: str
 
 
 class SPrefixMsg:
+    """ s_prefixコマンドメッセージ設定保持クラス
+    """
     s_prefix_changed: str
 
 
 class SVoiceMsg:
+    """ s_voiceコマンドメッセージ設定保持クラス
+    """
     s_voice_changed: str
     e_arg_not_valid: str
 
 
 class VoiceMsg:
+    """ voiceコマンドメッセージ設定保持クラス
+    """
     s_voice_changed: str
     e_arg_not_valid: str
 
 
 class TaskMsg:
+    """ taskメッセージ設定保持クラス
+    """
     e_failed: str
 
 
 class CommandMsg:
+    """ commandメッセージ設定保持クラス
+    """
     e_not_found: str
     e_failed: str
 
 
 class Msg:
+    """ メッセージ設定保持クラス
+    """
     common: CommonMsg = CommonMsg()
     join: JoinMsg = JoinMsg()
     bye: ByeMsg = ByeMsg()
@@ -202,8 +225,7 @@ class Msg:
 
 
 class ServerConfig:
-    """ 設定
-    yaml設定内容を保持する
+    """ サーバー個別設定保持クラス
     """
     cmd_prefix: str = None
     voice_type: str = None
@@ -217,12 +239,9 @@ class Yomiage:
     token: str
     cmd_prefix: str
     voice_type: str
-
     color: Color = Color()
     msg: Msg = Msg()
-
     server_configs: dict[int, ServerConfig] = {}
-
     server_statuses: dict[int, YomiageStatus] = {}
 
     def __init__(self):
@@ -263,6 +282,7 @@ class Yomiage:
                     self.voice_type = 'n'
                     logger.warning(f'Voice Type ({vt}) does not exist. Replaced to (n).')
 
+                # メッセージ設定
                 # Color
                 self.color.success = config_dict['color']['success']
                 self.color.warning = config_dict['color']['warning']
@@ -363,6 +383,9 @@ def make_speakable(text: str) -> str:
     text = re.sub(r'\d{5,}', 'たくさん', text)
     # 絵文字の削除
     text = re.sub(r'<:\w+:\d+>', '', text)
+    # 文字数上限２０
+    text = text[:20]
+
     return text
 
 
@@ -393,7 +416,14 @@ def create_wav(source: VoiceSource, input_file: str, output_file: str) -> None:
     subprocess.run(cmd)
 
 
-async def success_message(ctx, text, text_param):
+async def success_message(ctx: Context, text: str, text_param: dict[str, str]) -> None:
+    """ 成功メッセージ返却
+
+    :param ctx: Context
+    :param text: 返却文字列
+    :param text_param: 返却文字列パラメータ
+    :return: None
+    """
     message = ''
     if text:
         message = text
@@ -406,7 +436,14 @@ async def success_message(ctx, text, text_param):
         description=message))
 
 
-async def warning_message(ctx, text, text_param):
+async def warning_message(ctx: Context, text: str, text_param: dict[str, str]) -> None:
+    """ 警告メッセージ返却
+
+    :param ctx: Context
+    :param text: 返却文字列
+    :param text_param: 返却文字列パラメータ
+    :return: None
+    """
     message = ''
     if text:
         message = text
@@ -419,7 +456,16 @@ async def warning_message(ctx, text, text_param):
         description=message))
 
 
-async def error_message(ctx, text, text_param, error_text, traceback_text):
+async def error_message(ctx, text: str, text_param: dict[str, str], error_text: str, traceback_text: str):
+    """ エラーメッセージ返却
+
+    :param ctx: Context
+    :param text: 返却文字列
+    :param text_param: 返却文字列パラメータ
+    :param error_text:
+    :param traceback_text:
+    :return: None
+    """
     message = ''
     if text:
         message = text
@@ -442,6 +488,12 @@ async def error_message(ctx, text, text_param, error_text, traceback_text):
 
 
 def get_layered_server_cmd_prefix(guild_id: int) -> str:
+    """ サーバーコマンドプレフィックス取得
+    ルート<サーバー個別設定の優先順位で設定を取得
+
+    :param guild_id: guild id
+    :return: コマンドプレフィックス
+    """
     prefix = app.cmd_prefix
     if guild_id in app.server_configs:
         server_config = app.server_configs[guild_id]
@@ -451,6 +503,12 @@ def get_layered_server_cmd_prefix(guild_id: int) -> str:
 
 
 def get_layered_server_voice_type(guild_id: int) -> str:
+    """ サーバー声質取得
+    ルート<サーバー個別設定の優先順位で設定を取得
+
+    :param guild_id: guild id
+    :return: 声質
+    """
     voice_type = app.voice_type
     if guild_id in app.server_configs:
         server_config = app.server_configs[guild_id]
@@ -460,6 +518,13 @@ def get_layered_server_voice_type(guild_id: int) -> str:
 
 
 def get_layered_user_voice_type(guild_id: int, user_id: int) -> str:
+    """ ユーザー声質取得
+    ルート<サーバー個別<ユーザー個別設定の優先順位で設定を取得
+
+    :param guild_id: guild id
+    :param user_id: user id
+    :return: 声質
+    """
     voice_type = app.voice_type
     if guild_id in app.server_configs:
         server_config = app.server_configs[guild_id]
@@ -473,6 +538,13 @@ def get_layered_user_voice_type(guild_id: int, user_id: int) -> str:
 
 
 async def determine_prefix(bot, message) -> str:
+    """ プレフィックス判定コールバック
+    discord.pyがサーバのプレフィクスを判断するためのコールバック
+
+    :param bot: bot
+    :param message: message
+    :return: コマンドプレフィックス
+    """
     return get_layered_server_cmd_prefix(message.guild.id)
 
 
@@ -484,12 +556,20 @@ if __name__ == '__main__':
 
     @client.event
     async def on_guild_available(guild) -> None:
+        """ Guild接続
+        Guildが利用可能となった際に実行される
+        サーバー設定クラスインスタンスを作成する
+        """
         if guild.id not in app.server_configs:
             app.server_configs[guild.id] = ServerConfig()
 
 
     @client.event
     async def on_guild_unavailable(guild) -> None:
+        """ Guild切断
+        Guildが利用可能となった際に実行される
+        サーバー設定クラスインスタンスを破棄する
+        """
         if guild.id in app.server_configs:
             del app.server_configs[guild.id]
 
@@ -728,7 +808,7 @@ if __name__ == '__main__':
     @client.command()
     async def s_status(ctx: Context) -> None:
         """ サーバー状態確認
-        ボットの内部状態を確認します
+        サーバーの動作状態を確認します
         """
         logger.info(f'Received [s_status] cmd from user ({ctx.author.name}).')
 
@@ -759,7 +839,8 @@ if __name__ == '__main__':
 
     @client.command()
     async def s_config(ctx: Context) -> None:
-        """ サーバー設定状態確認
+        """ サーバー個別設定状態確認
+        サーバー個別設定の状態を確認します
         """
         logger.info(f'Received [s_config] cmd from user ({ctx.author.name}).')
 
@@ -789,7 +870,8 @@ if __name__ == '__main__':
 
     @client.command()
     async def config(ctx: Context) -> None:
-        """ ユーザー設定状態確認
+        """ ユーザー個別設定状態確認
+        ユーザー個別設定の状態を確認します
         """
         logger.info(f'Received [config] cmd from user ({ctx.author.name}).')
         voice_type = ''
