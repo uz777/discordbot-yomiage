@@ -1,0 +1,88 @@
+app:
+  # ボットトークン
+  # discord developer portalで取得したトークンを設定します
+  # トークンが漏洩すると、ボットが第三者に悪用される恐れがあります
+  # 外部には絶対に公開しないでください
+  token: "#### replace with your token! ####"
+
+  # コマンドプレフィックス
+  # ボットがコマンドを識別するための記号を設定します
+  # サーバー内でボットを複数使用する場合や、他のボットとコマンドが
+  # 競合する場合に変更してください
+  cmd_prefix: "."
+
+  # 声質
+  # ボットのデフォルトの声質を設定します
+  # 以下のいずれかから選択できます
+  # n  : nitech_jp_atr503_m001.htsvoice
+  # ma : mei_angry.htsvoice
+  # mb : mei_bashful.htsvoice
+  # mh : mei_happy.htsvoice
+  # mn : mei_normal.htsvoice
+  # ms : mei_sad.htsvoice
+  # ta : takumi_angry.htsvoice
+  # th : takumi_happy.htsvoice
+  # tn : takumi_normal.htsvoice
+  # ts : takumi_sad.htsvoice
+  voice_type: "mn"
+
+color:
+  success: 0x00FF00
+  warning: 0xFF8C00
+  error: 0xFF0000
+
+msg:
+  common:
+    success: "Success!"
+    warning: "Warning"
+    error: "Error"
+  join:
+    s_yomiage_started: "`{text_channel}`への投稿を、`{voice_channel}`で読み上げます"
+    w_nothing_to_do: "`{text_channel}`への投稿は、既に`{voice_channel}`で読み上げています\nチャンネルを切り替える場合は、あなた自身が対象のボイスチャンネルに参加し、読み上げたいテキストチャンネルで`{cmd_prefix}join`コマンドを実行してください"
+    e_user_not_in_vc: "あなたはボイスチャンネルに参加していません\n`{cmd_prefix}join`コマンドは、ボイスチャンネルに参加してから実行してください"
+  bye:
+    s_yomiage_stopped: "`{text_channel}`への投稿の、`{voice_channel}`での読み上げを終了しました"
+    e_bot_not_in_vc: "まだ読み上げを行っていないので、切断の必要はありません"
+  s_prefix:
+    s_prefix_changed: "サーバーのコマンドプレフィックスを`{cmd_prefix}`に変更しました"
+  s_voice:
+    s_voice_changed: "サーバーのデフォルト読み上げ声質を`{voice_type_name}`に変更しました"
+    e_arg_not_valid: "入力された引数({arg})は不正です\n指定できる引数は`{cmd_prefix}help voice`で確認することができます"
+  voice:
+    s_voice_changed: "あなたの読み上げ声質を`{voice_type_name}`に変更しました"
+    e_arg_not_valid: "入力された引数({arg})は不正です\n指定できる引数は`{cmd_prefix}help voice`で確認することができます"
+  task:
+    e_failed: "音声再生タスクの実行中に異常が発生しました"
+  command:
+    e_not_found: "そのようなコマンドはありません\n`{cmd_prefix}help`コマンドで、コマンドの一覧を確認してください"
+    e_failed: "コマンドの実行中に異常が発生しました"
+
+# ログ出力設定
+# これ以降は、コンソール画面やログファイルに出力するログ設定です
+# バグ調査の際に変更することがありますが、通常利用では変更の必要はありません
+version: 1
+formatters:
+  console:
+    format: '%(asctime)s - %(levelname)7s - %(name)10s - %(message)s'
+    datefmt: '%H:%M:%S'
+  file:
+    format: '%(asctime)s - %(levelname)7s - %(name)15s - %(message)s'
+handlers:
+  console:
+    class: logging.StreamHandler
+    formatter: console
+    stream: ext://sys.stdout
+  file:
+    class: logging.handlers.RotatingFileHandler
+    maxBytes: 1000000
+    backupCount: 3
+    filename: yomiage.log
+    formatter: file
+    level: ERROR
+loggers:
+  root:
+    level: WARN
+    handlers: [console, file]
+  yomiage:
+    level: INFO
+disable_existing_loggers: False
